@@ -37,7 +37,12 @@ CONFIG_NF_TABLES=y
 CONFIG_NF_TABLES_INET=y
 CONFIG_NF_TABLES_NETDEV=y
 CONFIG_NF_NAT=y
-CONFIG_NF_NAT_MASQUERADE=y
+# NF_NAT_MASQUERADE itu simbol tersembunyi: ia TIDAK punya prompt dan hanya ikut menyala kalau
+# target masquerade-nya diaktifkan. Di kernel 6.19 itu berarti NETFILTER_XT_TARGET_MASQUERADE
+# (iptables legacy) dan/atau NFT_MASQ (nftables). Menulis CONFIG_NF_NAT_MASQUERADE=y saja
+# tidak mendarat — persis yang dilaporkan apply-config-fragment.sh di CI.
+CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
+CONFIG_NFT_MASQ=y
 CONFIG_NF_CONNTRACK=y
 CONFIG_NETFILTER_XTABLES=y
 CONFIG_NETFILTER_XTABLES_LEGACY=y
