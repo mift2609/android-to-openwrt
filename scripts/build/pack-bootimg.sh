@@ -16,7 +16,7 @@ set -eu
 . "$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)/scripts/lib/common.sh"
 load_device
 
-OUT="$(repo_root)/out/$DEVICE"
+OUT="${OUT_DIR:-$(repo_root)/out/$DEVICE}"
 MKBOOTIMG="$(repo_root)/scripts/tools/mkbootimg.py"
 UNPACK="$(repo_root)/scripts/tools/unpack_bootimg.py"
 KIMG="$OUT/Image.gz"
@@ -54,8 +54,15 @@ if [ -f "$VDIR/kernel" ]; then
   else die "kernel di dalam image BERBEDA dengan yang dikirim — proses packing salah"; fi
 fi
 if [ -f "$VDIR/ramdisk" ]; then
-  gzip -dc "$VDIR/ramdisk" | cpio -t --quiet 2>/dev/null | grep -qx './init' \
-    && ok "ramdisk di dalam image memuat /init" || die "ramdisk di dalam image tidak memuat /init"
+  # cpio menyimpan nama sebagai 'init' (GNU cpio versi ini) atau './init'; terima keduanya —
+  # memeriksa hanya './init' pernah membuat build yang SEHAT dilaporkan gagal.
+  RAMLIST=$(gzip -dc "$VDIR/ramdisk" | cpio -t --quiet 2>/dev/null || true)
+  if printf '%s\n' "$RAMLIST" | grep -qxE '(\./)?init'; then
+    ok "ramdisk di dalam image memuat /init"
+  else
+    printf '%s\n' "$RAMLIST" | head -10 | sed 's/^/    /' >&2
+    die "ramdisk di dalam image tidak memuat /init (daftar di atas = isi ramdisk)"
+  fi
 fi
 grep -q "$(basename "$DTB")" "$VDIR/unpack.err" 2>/dev/null || true
 
