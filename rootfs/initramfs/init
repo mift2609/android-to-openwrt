@@ -1,0 +1,131 @@
+#!/bin/busybox sh
+# /init — initramfs tahap awal (jalur B). Tugasnya HANYA:
+#   1. siapkan /proc /sys /dev
+#   2. naikkan USB gadget (RNDIS/ECM) supaya host bisa SSH ke perangkat
+#   3. beri IP pada usb0 dan (opsional) jalankan udhcpc untuk mendapat IP dari host
+#   4. hand-off ke rootfs sebenarnya (atau ke /bin/sh kalau rootfs tidak ditemukan)
+#
+# Prinsip yang sudah dibayar mahal di perangkat nyata:
+#   - gadget dikonfigurasi SEBELUM hal non-esensial: kalau driver layar/panel gagal probe,
+#     init yang menunggu /dev/tty0 akan mati sebelum USB pernah muncul — perangkat tampak
+#     "mati total" padahal kernel sehat.
+#   - redireksi ke /dev/tty0 HARUS dijaga (if [ -e ]), bukan `exec >/dev/tty0` tanpa syarat.
+#   - IP gadget JANGAN 192.168.1.1: bentrok dengan router rumah dan host akan mengirim
+#     paket ke gateway yang salah (host seperti "terhubung" padahal tidak).
+#   - `panic=N` di cmdline: kalau init mati, perangkat reboot sendiri dan muncul kembali
+#     sebagai fastboot — satu-satunya sinyal yang bisa dibaca tanpa layar/serial.
+
+/bin/busybox --install -s /bin
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+mount -t proc     proc  /proc 2>/dev/null
+mount -t sysfs    sysfs /sys  2>/dev/null
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || mount -t tmpfs tmpfs /dev
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t tmpfs tmpfs /tmp
+
+# console: opsional, jangan sampai kegagalannya membunuh init
+if [ -e /dev/tty0 ]; then
+  exec >/dev/tty0 2>&1
+elif [ -e /dev/console ]; then
+  exec >/dev/console 2>&1
+fi
+
+GADGET_IP="${GADGET_IP:-192.168.42.1}"
+GADGET_MAC="${DEVICE_MAC:-02:1a:11:00:42:02}"
+HOST_MAC="${HOST_MAC:-02:1a:11:00:42:01}"
+
+echo
+echo "=== android-to-openwrt initramfs ==="
+echo "kernel: $(uname -r)"
+
+# modul inti (kalau tidak built-in)
+for m in phy-qcom-qusb2 dwc3 dwc3-qcom libcomposite usb_f_rndis usb_f_ecm; do
+  [ -d "/sys/module/${m//-/_}" ] && continue
+  modprobe "$m" 2>/dev/null || true
+done
+
+# --- USB gadget (RNDIS + ECM: host Windows pakai RNDIS, Linux pakai ECM) ------
+setup_gadget() {
+  G=/sys/kernel/config/usb_gadget/g1
+  [ -d "$G" ] && return 0
+  mkdir -p "$G" || return 1
+  echo 0x1d6b > "$G/idVendor"      # Linux Foundation (BUKAN VID pabrikan HP)
+  echo 0x0104 > "$G/idProduct"
+  mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+  echo "${DEVICE_NAME:-android-openwrt}" > "$G/strings/0x409/product"
+  echo "android-to-openwrt" > "$G/strings/0x409/manufacturer"
+  echo "$GADGET_MAC" > "$G/strings/0x409/serialnumber"
+  echo 250 > "$G/configs/c.1/MaxPower"
+  mkdir -p "$G/functions/rndis.usb0" "$G/functions/ecm.usb0"
+  echo "$DEVICE_MAC" > "$G/functions/rndis.usb0/dev_addr"
+  echo "$HOST_MAC"   > "$G/functions/rndis.usb0/host_addr"
+  echo "$DEVICE_MAC" > "$G/functions/ecm.usb0/dev_addr"
+  echo "$HOST_MAC"   > "$G/functions/ecm.usb0/host_addr"
+  ln -sf "$G/functions/rndis.usb0" "$G/configs/c.1/"
+  ln -sf "$G/functions/ecm.usb0"   "$G/configs/c.1/" 2>/dev/null || true
+  # UDC muncul asinkron (PHY probe): tunggu sampai ~15 s sebelum menyerah
+  i=0
+  while [ $i -lt 30 ]; do
+    UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+    [ -n "$UDC" ] && break
+    sleep 0.5; i=$((i+1))
+  done
+  [ -n "${UDC:-}" ] || { echo "[!] tidak ada /sys/class/udc — PHY/dwc3 gagal probe?"; return 1; }
+  echo "$UDC" > "$G/UDC" 2>/dev/null || { echo "[!] gagal bind UDC $UDC"; return 1; }
+  echo "[ok] gadget bind ke $UDC"
+}
+
+if setup_gadget; then
+  # tunggu netdev gadget muncul
+  i=0
+  while [ $i -lt 20 ]; do
+    NETDEV=$(ls /sys/class/net | grep -E '^(usb|rndis|eth)' | head -1)
+    [ -n "$NETDEV" ] && break
+    sleep 0.5; i=$((i+1))
+  done
+  if [ -n "${NETDEV:-}" ]; then
+    ip link set "$NETDEV" up
+    ip addr add "$GADGET_IP/24" dev "$NETDEV" 2>/dev/null
+    echo "[ok] $NETDEV = $GADGET_IP/24 (host: 192.168.42.2/24, TANPA default gateway)"
+  else
+    echo "[!] netdev gadget tidak muncul"
+  fi
+else
+  echo "[!] gadget gagal — perangkat tetap boot, tapi tidak ada jaringan USB"
+fi
+
+# --- SSH/telnet darurat -------------------------------------------------------
+mkdir -p /etc/dropbear
+[ -f /etc/dropbear/dropbear_rsa_host_key ] || dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key >/dev/null 2>&1
+dropbear -p 22 -R 2>/dev/null && echo "[ok] dropbear di port 22 (root/root)"
+telnetd -p 23 -l /bin/sh 2>/dev/null && echo "[ok] telnetd di port 23"
+
+# --- hand-off ke rootfs ------------------------------------------------------
+# Urutan kandidat rootfs: dari cmdline (root=) lalu partisi by-name yang umum.
+find_rootfs() {
+  # 1. rootfs sebagai image ext4 di partisi (kasus umum repo ini)
+  for p in ${ROOTFS_CANDIDATES:-"/dev/block/by-name/userdata /dev/block/bootdevice/by-name/userdata"}; do
+    [ -b "$p" ] || continue
+    T=/newroot; mkdir -p "$T"
+    if mount -o ro "$p" "$T" 2>/dev/null; then
+      if [ -x "$T/sbin/init" ] || [ -x "$T/bin/busybox" ]; then echo "$p"; return 0; fi
+      umount "$T"
+    fi
+  done
+  return 1
+}
+
+ROOTPART=$(find_rootfs || true)
+if [ -n "${ROOTPART:-}" ]; then
+  echo "[ok] rootfs ditemukan di $ROOTPART — switch_root"
+  mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/tmp
+  mount --move /dev /newroot/dev 2>/dev/null || true
+  mount --move /proc /newroot/proc 2>/dev/null || true
+  mount --move /sys /newroot/sys 2>/dev/null || true
+  exec switch_root /newroot /sbin/init
+else
+  echo "[!] rootfs tidak ditemukan di kandidat: ${ROOTFS_CANDIDATES:-userdata}"
+  echo "    jatuh ke shell darurat. Setiap 20 s akan mencoba cari rootfs lagi."
+  while true; do sleep 20; ROOTPART=$(find_rootfs || true); [ -n "${ROOTPART:-}" ] && exec "$0"; done
+fi

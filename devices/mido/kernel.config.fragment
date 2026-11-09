@@ -1,0 +1,105 @@
+# Fragment config kernel untuk Xiaomi Redmi Note 4X (mido, MSM8953)
+# Target: kernel mainline msm8953-mainline/linux, tag v6.19.5-r0 (jalur B repo ini).
+#
+# Format: satu opsi per baris, `CONFIG_X=y|m|n` atau `# CONFIG_X is not set`.
+# Diterapkan oleh scripts/build/apply-config-fragment.sh, yang MEMVERIFIKASI setiap simbol
+# ada di Kconfig dan benar-benar mendarat di .config hasil `make olddefconfig`.
+#
+# Aturan memilih =y vs =m:
+#   =y  -> wajib sebelum userspace: clock/interconnect, USB PHY+gadget, netfilter, DRM console.
+#          Initramfs tidak memuat modul, jadi apa pun yang dibutuhkan saat boot harus built-in.
+#   =m  -> driver yang di-`modprobe` dari rootfs (/lib/modules) oleh init script:
+#          remoteproc/WCNSS/modem. Modul ini berasal dari artefak `modules_install` dan
+#          harus ikut di dalam rootfs; kalau tidak, WiFi/modem gagal senyap.
+
+# --- 1. arsitektur / VA (PITFALL UTAMA) --------------------------------------
+# Choice "Virtual address space size" di arch/arm64/Kconfig punya `default ARM64_VA_BITS_52`!
+# Di defconfig platform msm8953, ARTINYA: kalau kamu tidak menyetel apa pun, olddefconfig
+# memilih 52-bit — dan Cortex-A53 (ARMv8.0) tidak mendukung 52-bit VA (butuh ARMv8.2-A LVA).
+# Gejalanya: MMU fault saat init, reboot ke fastboot dalam ~0,1 s tanpa satu baris log.
+# Karena itu 48-bit dipaksa EKSPLISIT di sini (dan diverifikasi skrip penerap).
+CONFIG_ARM64_VA_BITS_48=y
+# CONFIG_ARM64_VA_BITS_52 is not set
+CONFIG_ARM64_PA_BITS_48=y
+# CONFIG_ARM64_PA_BITS_52 is not set
+
+# --- 2. clock + interconnect SoC (tanpa ini clock peripheral tidak bisa di-toggle) ---
+CONFIG_MSM_GCC_8953=y
+CONFIG_INTERCONNECT_QCOM_MSM8953=y
+CONFIG_INTERCONNECT_QCOM=y
+
+# --- 3. USB gadget (jalur jaringan utama: RNDIS/ECM ke host) -----------------
+# Defconfig platform punya PHY=m / CONFIGFS=m -> USB sering gagal probe sebelum modul ada,
+# /sys/class/udc tidak terisi, dan gadget tidak pernah enumerate.
+CONFIG_PHY_QCOM_QUSB2=y
+CONFIG_USB_GADGET=y
+CONFIG_USB_CONFIGFS=y
+CONFIG_USB_CONFIGFS_RNDIS=y
+CONFIG_USB_F_RNDIS=y
+CONFIG_USB_CONFIGFS_ECM=y
+CONFIG_USB_F_ECM=y
+CONFIG_USB_LIBCOMPOSITE=y
+CONFIG_USB_U_ETHER=y
+CONFIG_USB_SUPPORT=y
+CONFIG_USB_DWC3=y
+CONFIG_USB_DWC3_QCOM=y
+
+# --- 4. netfilter / routing --------------------------------------------------
+# firewall4 (default OpenWrt 24.10) memakai nftables -> CONFIG_NF_TABLES wajib.
+# Kernel 6.19 memindahkan stack iptables lama ke simbol `*_LEGACY`; itu yang membuat
+# iptables legacy (dipakai sebagian skrip lama) berfungsi. Keduanya dibiarkan menyala:
+# keduanya berdampingan tanpa konflik.
+CONFIG_NETFILTER=y
+CONFIG_NF_TABLES=y
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_TABLES_NETDEV=y
+CONFIG_NF_NAT=y
+CONFIG_NF_NAT_MASQUERADE=y
+CONFIG_NF_CONNTRACK=y
+CONFIG_NETFILTER_XTABLES=y
+CONFIG_NETFILTER_XTABLES_LEGACY=y
+CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
+CONFIG_IP_NF_IPTABLES=y
+CONFIG_IP_NF_IPTABLES_LEGACY=y
+CONFIG_IP_NF_FILTER=y
+CONFIG_IP_NF_NAT=y
+CONFIG_IP_NF_TARGET_MASQUERADE=y
+CONFIG_IPV6=y
+CONFIG_BRIDGE=y
+CONFIG_VETH=y
+CONFIG_TUN=y
+CONFIG_PACKET=y
+CONFIG_UNIX=y
+
+# --- 5. filesystem rootfs ----------------------------------------------------
+CONFIG_EXT4_FS=y
+CONFIG_F2FS_FS=y
+CONFIG_SQUASHFS=y
+CONFIG_OVERLAY_FS=y
+CONFIG_TMPFS=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+
+# --- 6. layar / console (untuk bring-up tanpa serial) ------------------------
+# Tanpa DRM+SimpleDRM+framebuffer console, tidak ada satu pun output di layar:
+# kegagalan boot jadi tidak terbedakan dari perangkat mati. DRM harus =y lebih dulu —
+# SimpleDRM bergantung padanya, dan kalau DRM=m maka SimpleDRM juga cuma bisa m.
+CONFIG_DRM=y
+CONFIG_DRM_KMS_HELPER=y
+CONFIG_DRM_SIMPLEDRM=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_VT=y
+
+# --- 7. remoteproc / firmware (WiFi WCNSS + modem) ---------------------------
+# Sengaja =m: rantai modul (qcom_wcnss_pil, qrtr, q6v5) di-`modprobe` dari rootfs
+# oleh init script WiFi/modem. Yang penting modulnya benar-benar ada di
+# /lib/modules/$(uname -r) di dalam rootfs (artefak `modules-<device>` dari CI).
+CONFIG_QCOM_SMD_RPM=y
+CONFIG_QCOM_WCNSS_PIL=m
+CONFIG_QCOM_Q6V5_PAS=m
+CONFIG_QCOM_PIL_INFO=m
+CONFIG_REMOTEPROC=y
+CONFIG_QRTR=y
+CONFIG_QCOM_SMEM=y

@@ -1,0 +1,146 @@
+name: build-kernel
+
+# Build kernel mainline + DTB + modul + initramfs + boot.img untuk SATU perangkat.
+# Laptop sering kalah: build dingin puluhan menit, sedangkan dengan ccache hangat di runner
+# selesai dalam hitungan menit.
+#
+# Pakai:
+#   gh workflow run build-kernel.yml -f device=mido -f kernel_tag=v6.19.5-r0
+#   gh run list --limit 3
+#   gh run view <run-id> --json status,conclusion -q '".status + " " + .conclusion"'
+#   gh run download <run-id> -n boot-img-<device> -D out-artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: "Nama profil di devices/ (mis. mido, rolex)"
+        required: true
+        default: mido
+      kernel_tag:
+        description: "Tag kernel (kosong = pakai KERNEL_TAG dari device.conf)"
+        required: false
+        default: ""
+      upload_modules:
+        description: "Unggah juga pohon /lib/modules (perlu untuk WiFi/modem .ko)"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baca profil perangkat
+        id: dev
+        run: |
+          set -e
+          . "devices/${{ inputs.device }}/device.conf"
+          TAG="${{ inputs.kernel_tag }}"
+          [ -n "$TAG" ] || TAG="$KERNEL_TAG"
+          echo "tag=$TAG"       >> "$GITHUB_OUTPUT"
+          echo "arch=$ARCH"     >> "$GITHUB_OUTPUT"
+          echo "kernel_repo=$KERNEL_REPO" >> "$GITHUB_OUTPUT"
+          echo "dtb=$DTB"       >> "$GITHUB_OUTPUT"
+          echo "cross=$CROSS_COMPILE" >> "$GITHUB_OUTPUT"
+          echo "fragment=$KERNEL_CONFIG_FRAGMENT" >> "$GITHUB_OUTPUT"
+          echo "device=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
+          echo "### $DEVICE_NAME — kernel $TAG" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dependensi build
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bc bison flex libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio xz-utils rsync gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu python3
+
+      - name: Cache ccache (kunci HARUS memuat tag kernel)
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ inputs.device }}-${{ steps.dev.outputs.tag }}
+          max-size: 2G
+
+      - name: Ambil sumber kernel (tarball tag, bukan clone)
+        run: |
+          set -e
+          mkdir -p src
+          curl -fL --retry 3 -o kernel.tar.gz \
+            "${{ steps.dev.outputs.kernel_repo }}/archive/refs/tags/${{ steps.dev.outputs.tag }}.tar.gz"
+          tar xzf kernel.tar.gz -C src --strip-components=1
+          test -f src/Makefile
+
+      - name: defconfig + fragment perangkat (dengan verifikasi)
+        env:
+          ARCH: ${{ steps.dev.outputs.arch }}
+          CROSS_COMPILE: ${{ steps.dev.outputs.cross }}
+        run: |
+          set -e
+          make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" defconfig
+          ./scripts/build/apply-config-fragment.sh --tree src --fragment "${{ steps.dev.outputs.fragment }}"
+          grep -E "^CONFIG_(MSM_GCC_8953|PHY_QCOM_QUSB2|USB_CONFIGFS|NF_TABLES)=y" src/.config \
+            && echo "fragment mendarat" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build kernel + dtbs + modules
+        env:
+          ARCH: ${{ steps.dev.outputs.arch }}
+          CROSS_COMPILE: ${{ steps.dev.outputs.cross }}
+        run: |
+          set -e
+          make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" -j"$(nproc)" Image.gz dtbs modules
+          test -f "src/arch/$ARCH/boot/Image.gz"
+          test -f "src/arch/$ARCH/boot/dts/${{ steps.dev.outputs.dtb }}"
+
+      - name: Staging kernel + DTB + modul
+        env:
+          ARCH: ${{ steps.dev.outputs.arch }}
+          CROSS_COMPILE: ${{ steps.dev.outputs.cross }}
+        run: |
+          set -e
+          OUT="out/${{ inputs.device }}"
+          mkdir -p "$OUT/qcom"
+          cp "src/arch/$ARCH/boot/Image.gz" "$OUT/Image.gz"
+          cp "src/arch/$ARCH/boot/dts/${{ steps.dev.outputs.dtb }}" "$OUT/qcom/"
+          cp src/.config "$OUT/.config"
+          cat "$OUT/Image.gz" "$OUT/qcom/$(basename "${{ steps.dev.outputs.dtb }}")" > "$OUT/Image.gz-dtb"
+          make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" INSTALL_MOD_PATH="$OUT/modules" modules_install
+          rm -f "$OUT/modules/lib/modules/"*/build "$OUT/modules/lib/modules/"*/source
+          make -s -C src ARCH="$ARCH" kernelrelease > "$OUT/kernelrelease"
+          echo "kernelrelease=$(cat "$OUT/kernelrelease")" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Initramfs (busybox arch TARGET, bukan busybox runner)
+        env:
+          DEVICE: ${{ inputs.device }}
+        run: ./scripts/build/mkinitramfs.sh
+
+      - name: boot.img + verifikasi bongkar-ulang
+        env:
+          DEVICE: ${{ inputs.device }}
+        run: ./scripts/build/pack-bootimg.sh
+
+      - name: Unggah artefak (boot.img + kernel + dtb + .config)
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-img-${{ inputs.device }}-${{ steps.dev.outputs.tag }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            out/${{ inputs.device }}/boot.img
+            out/${{ inputs.device }}/Image.gz
+            out/${{ inputs.device }}/Image.gz-dtb
+            out/${{ inputs.device }}/qcom/*.dtb
+            out/${{ inputs.device }}/.config
+            out/${{ inputs.device }}/kernelrelease
+
+      - name: Unggah modul (opsional)
+        if: ${{ inputs.upload_modules }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: modules-${{ inputs.device }}-${{ steps.dev.outputs.tag }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: out/${{ inputs.device }}/modules/lib/modules/**

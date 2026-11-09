@@ -1,0 +1,71 @@
+#!/bin/sh
+# S15usb — init script OpenWrt (procd) yang menaikkan USB gadget RNDIS/ECM sebagai "lan".
+# Dipasang di rootfs: /etc/init.d/S15usb  (dinamai S15 supaya jalan SEBELUM layanan jaringan)
+#
+# Kalau OpenWrt sudah jalan (procd), jangan pakai /init initramfs: script ini yang mengurus.
+# UCI adalah sumber kebenaran; file ini hanya menyentuh kernel/configfs.
+#
+# Mengapa START=15 bukan 90: kalau gadget naik setelah netifd/dnsmasq, interface "lan" tidak
+# ada saat netifd memprosesnya, dan kamu mendapatkan DHCP server yang tidak mendengarkan.
+# Urutan boot menentukan, bukan kecepatan firmware.
+
+START=15
+STOP=85
+USE_PROCD=1
+
+GADGET_NAME=g1
+GADGET_DIR=/sys/kernel/config/usb_gadget/$GADGET_NAME
+GADGET_IP="$(uci -q get network.lan.ipaddr || echo 192.168.42.1)"
+DEV_MAC="$(uci -q get network.lan.macaddr || echo 02:1a:11:00:42:02)"
+HOST_MAC="02:1a:11:00:42:01"
+
+start_service() {
+  mkdir -p /sys/kernel/config
+  mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config 2>/dev/null
+
+  # modul (lewati kalau sudah built-in)
+  for m in libcomposite usb_f_rndis usb_f_ecm dwc3 dwc3-qcom phy-qcom-qusb2; do
+    [ -d "/sys/module/${m//-/_}" ] || modprobe "$m" 2>/dev/null || true
+  done
+
+  [ -d "$GADGET_DIR" ] || mkdir -p "$GADGET_DIR" || { logger -t S15usb "configfs tidak tersedia"; return 1; }
+
+  echo 0x1d6b > "$GADGET_DIR/idVendor"
+  echo 0x0104 > "$GADGET_DIR/idProduct"
+  mkdir -p "$GADGET_DIR/strings/0x409" "$GADGET_DIR/configs/c.1/strings/0x409"
+  echo "$(uci -q get system.@system[0].hostname || echo android-openwrt)" > "$GADGET_DIR/strings/0x409/product"
+  echo "android-to-openwrt" > "$GADGET_DIR/strings/0x409/manufacturer"
+  echo "$DEV_MAC" > "$GADGET_DIR/strings/0x409/serialnumber"
+  echo 250 > "$GADGET_DIR/configs/c.1/MaxPower"
+
+  for f in rndis.usb0 ecm.usb0; do
+    [ -d "$GADGET_DIR/functions/$f" ] || mkdir -p "$GADGET_DIR/functions/$f"
+    echo "$DEV_MAC"  > "$GADGET_DIR/functions/$f/dev_addr"
+    echo "$HOST_MAC" > "$GADGET_DIR/functions/$f/host_addr"
+  done
+  [ -e "$GADGET_DIR/configs/c.1/rndis.usb0" ] || ln -sf "$GADGET_DIR/functions/rndis.usb0" "$GADGET_DIR/configs/c.1/"
+  [ -e "$GADGET_DIR/configs/c.1/ecm.usb0" ]   || ln -sf "$GADGET_DIR/functions/ecm.usb0"   "$GADGET_DIR/configs/c.1/"
+
+  # UDC dari PHY probe asinkron: tunggu
+  udc=""
+  i=0; while [ $i -lt 30 ]; do udc=$(ls /sys/class/udc 2>/dev/null | head -1); [ -n "$udc" ] && break; sleep 0.5; i=$((i+1)); done
+  [ -n "$udc" ] || { logger -t S15usb "tidak ada /sys/class/udc"; return 1; }
+  echo "$udc" > "$GADGET_DIR/UDC" 2>/dev/null || logger -t S15usb "bind UDC gagal"
+
+  # pastikan netdev-nya masuk ke bridge lan / diberi IP oleh netifd
+  i=0; while [ $i -lt 20 ]; do dev=$(ls /sys/class/net | grep -E '^(usb|rndis|eth)' | head -1); [ -n "$dev" ] && break; sleep 0.5; i=$((i+1)); done
+  if [ -n "$dev" ]; then
+    logger -t S15usb "gadget netdev $dev up, IP $GADGET_IP"
+    [ "$(uci -q get network.lan.device)" = "$dev" ] || {
+      uci set network.lan.device="$dev"; uci commit network; /etc/init.d/network reload
+    }
+  fi
+}
+
+stop_service() {
+  echo "" > "$GADGET_DIR/UDC" 2>/dev/null
+}
+
+service_triggers() {
+  procd_add_reload_trigger network
+}

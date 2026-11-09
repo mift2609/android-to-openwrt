@@ -1,0 +1,14 @@
+# artefak build — jangan pernah masuk history git
+out/
+out-artifact/
+src/
+modroot/
+staging/
+*.img
+*.tar.gz
+*.cpio.gz
+*.apk
+.work/
+*.o
+*.ko
+*.dtb
