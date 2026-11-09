@@ -71,6 +71,37 @@ uci commit
 Lalu: `opkg update && opkg install luci` bila ingin UI web, dan
 `/etc/init.d/uhttpd start` (atau `--services` yang sudah menjalankannya).
 
+## Syarat kernel di HP-mu — periksa SEBELUM repot (sering gagal di sini)
+
+"Root" saja tidak cukup: yang menentukan adalah **flag kernel Android-mu**. Kernel bawaan vendor
+sering dikirim tanpa `CONFIG_PID_NS`/`CONFIG_IPC_NS`, dan tanpa itu container/chroot berlapis
+namespace **tidak bisa start sama sekali** (bukan sekadar fitur berkurang).
+
+```sh
+# di HP (root) — jalur A pakai kernel Android yang sudah ada
+zcat /proc/config.gz 2>/dev/null | grep -E 'CONFIG_(PID_NS|IPC_NS|UTS_NS|NET_NS|USER_NS|CGROUPS|MEMCG)='
+# kalau /proc/config.gz tidak ada, ambil dari kernel yang sedang jalan:
+#   strings /dev/block/by-name/boot | grep -m1 'Linux version'
+```
+
+Kalau kamu memakai runtime container (Droidspaces dkk), biarkan alatnya yang memeriksa:
+`droidspaces check --json` (atau Settings → Requirements) melaporkan MUST-HAVE / RECOMMENDED /
+OPTIONAL. MUST-HAVE merah = jangan buang waktu; masalahnya kernel, bukan konfigurasi OpenWrt.
+
+Konsekuensi praktis:
+
+- **`PID_NS`/`IPC_NS` ada** → `enter.sh --init` (procd sebagai PID 1) atau runtime container bisa
+  dipakai. Ini kasus yang enak.
+- **Namespace tidak lengkap** → jalur A tinggal mode `--services`/`--shell` (tanpa procd sebagai
+  PID 1), atau tidak jalan sama sekali. Menambah flag namespace berarti membangun kernel kustom
+  (di kernel GKI 5.4+ wajib patch kABI, kalau tidak perangkat bootloop) — dan begitu kamu membangun
+  kernel sendiri, jalur B (mainline) justru lebih masuk akal untuk router permanen.
+- **Docker/Podman di dalam container** butuh rootfs berupa **image ext4 sparse**, karena `/data`
+  di Android adalah F2FS dan driver `overlay2` tidak bisa hidup di sana. Untuk OpenWrt userspace
+  biasa, rootfs mode direktori (yang dipakai skrip di repo ini) sudah cukup.
+- Kalau memakai WebUI runtime container: **ganti sandi default sebelum mengeksposnya ke LAN** —
+  daemon itu API dengan hak root.
+
 ## Batasan yang harus kamu terima (jujur, ini bukan bug)
 
 1. **Kernel tetap kernel Android.** `opkg install kmod-*` tidak ada gunanya; modul kernel tidak
