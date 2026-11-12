@@ -171,3 +171,14 @@ CONFIG_WCN36XX=m
 # CONFIG_ARCH_VISCONTI is not set
 # CONFIG_ARCH_XGENE is not set
 # CONFIG_ARCH_ZYNQMP is not set
+
+# --- FIX USB (temuan 13 Nov 2026, akar masalah test boot 7/8): USB rolex itu
+# ChipIdea ci-hdrc + PHY "qcom,usb-hs-28nm-femtophy", BUKAN dwc3. Di defconfig
+# driver PHY-nya =m dan initramfs repo ini tidak membawa modul -> probe ci-hdrc
+# menggantung menunggu PHY, /sys/class/udc tidak pernah muncul, gadget gagal,
+# init jatuh ke loop cari rootfs: perangkat HIDUP tapi tampak mati total.
+# extcon di DT rolex adalah linux,extcon-usb-dummy; drivernya juga mati.
+# Paksa ketiganya built-in.
+CONFIG_PHY_QCOM_USB_HS_28NM=y
+CONFIG_PHY_QCOM_USB_HS=y
+CONFIG_EXTCON_USB_DUMMY=y
