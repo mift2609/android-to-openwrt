@@ -1,0 +1,24 @@
+
+=== identitas perangkat ===
+[fastboot] tidak ada perangkat di fastboot
+
+=== identitas (adb) ===
+  ro.product.device = rolex
+  ro.product.model = Redmi 4A
+  ro.board.platform = msm8937
+  ro.boot.hardware = qcom
+  ro.build.version.release = 10
+  id -u  = 2000 (root?)
+  partisi by-name (boot/userdata):
+    lrwxrwxrwx 1 root root 21 1970-02-18 18:25 aboot -> /dev/block/mmcblk0p19
+    lrwxrwxrwx 1 root root 21 1970-02-18 18:25 abootbak -> /dev/block/mmcblk0p20
+    lrwxrwxrwx 1 root root 21 1970-02-18 18:25 boot -> /dev/block/mmcblk0p21
+    lrwxrwxrwx 1 root root 21 1970-02-18 18:25 userdata -> /dev/block/mmcblk0p49
+
+=== argumen mkbootimg + cmdline dari /home/qiiin/rolex-openwrt/backup/boot-current.img ===
+  keluaran mentah:
+    --header_version 0 --os_version 10.0.0 --os_patch_level 2022-03 --kernel /home/qiiin/.hermes/cache/scratch/tmp.AVjBlGipe5/kernel --ramdisk /home/qiiin/.hermes/cache/scratch/tmp.AVjBlGipe5/ramdisk --pagesize 0x00000800 --base 0x00000000 --kernel_offset 0x80008000 --ramdisk_offset 0x81000000 --second_offset 0x80f00000 --tags_offset 0x80000100 --board '' --cmdline 'androidboot.hardware=qcom msm_rtb.filter=0x237 ehci-hcd.park=3 lpm_levels.sleep_disabled=1 androidboot.bootdevice=7824900.sdhci earlycon=msm_hsl_uart,0x78B0000 loop.max_part=7 buildvariant=userdebug'
+
+  -> baris siap tempel untuk devices/rolex/device.conf:
+     MKBOOTIMG_ARGS="--header_version 0 --os_version 10.0.0 --os_patch_level 2022-03 --pagesize 0x00000800 --base 0x00000000 --kernel_offset 0x80008000 --ramdisk_offset 0x81000000 --second_offset 0x80f00000 --tags_offset 0x80000100 --board ''"
+     KERNEL_CMDLINE="androidboot.hardware=qcom msm_rtb.filter=0x237 ehci-hcd.park=3 lpm_levels.sleep_disabled=1 androidboot.bootdevice=7824900.sdhci earlycon=msm_hsl_uart,0x78B0000 loop.max_part=7 buildvariant=userdebug"
