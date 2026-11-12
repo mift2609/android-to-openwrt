@@ -15,7 +15,8 @@ yang otomatis memverifikasi lewat GitHub API:
 | repo kernel + ref | `msm89x7-mainline/linux` default branch `msm89x7/7.1.3`, tag `v7.1.3-r1` ada |
 | DTS untuk codename | `arch/arm64/boot/dts/qcom/msm8917-xiaomi-rolex.dts` |
 | DTB dibangun oleh `make dtbs` | terdaftar di `dts/qcom/Makefile` → `msm8917-xiaomi-rolex.dtb` |
-| bootloader lk2nd | `msm89x7-mainline/lk2nd` ada, entri `rolex` ada di `lk2nd/device/dts/msm8952/msm8917-xiaomi-common.dts` |
+| bootloader lk2nd | `msm8916-mainline/lk2nd` (branch `main`) ada, entri `rolex` ada di `lk2nd/device/dts/msm8952/msm8917-xiaomi-common.dts` (**bukan** di `msm89x7-mainline/lk2nd` — repo itu tidak punya entri rolex) |
+| aset lk2nd siap pakai | rilis `23.1` → `lk2nd-msm8952.img`, sha256 cocok dengan `sha256sums.txt` rilis |
 
 **Yang TIDAK bisa diverifikasi dari jarak jauh** (dan karena itu `device.conf` masih berisi TODO):
 `MKBOOTIMG_ARGS`, `KERNEL_CMDLINE`, nama partisi, dan offset lk2nd. Semuanya harus dibaca dari

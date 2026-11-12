@@ -82,8 +82,14 @@ jobs:
           set -e
           make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" defconfig
           ./scripts/build/apply-config-fragment.sh --tree src --fragment "${{ steps.dev.outputs.fragment }}"
-          grep -E "^CONFIG_(MSM_GCC_8953|PHY_QCOM_QUSB2|USB_CONFIGFS|NF_TABLES)=y" src/.config \
-            && echo "fragment mendarat" >> "$GITHUB_STEP_SUMMARY"
+          # Jangan hardcode simbol SoC di sini: perangkat lain (rolex = MSM_GCC_8917) tidak punya
+          # MSM_GCC_8953, dan grep yang gagal = job CI gagal padahal build-nya sehat. Yang benar:
+          # periksa SETIAP simbol =y yang diminta fragment perangkat ini benar-benar ada di .config.
+          SYMS=$(grep -E '^CONFIG_[A-Z0-9_]+=y$' "${{ steps.dev.outputs.fragment }}" | cut -d= -f1 | sort -u)
+          MISS=""
+          for s in $SYMS; do grep -qx "$s=y" src/.config || MISS="$MISS $s"; done
+          if [ -n "$MISS" ]; then echo "simbol fragment TIDAK mendarat:$MISS" >&2; exit 1; fi
+          echo "fragment mendarat: $(printf '%s\n' $SYMS | wc -l) simbol =y di .config" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build kernel + dtbs + modules
         env:
