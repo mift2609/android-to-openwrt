@@ -117,3 +117,57 @@ CONFIG_DEBUG_INFO_NONE=y
 CONFIG_CFG80211=m
 CONFIG_MAC80211=m
 CONFIG_WCN36XX=m
+
+# --- SLIM-2 (disiapkan 13 Nov 2026, untuk build BERIKUTNYA — tidak memengaruhi
+# run 43292095017 yang sedang jalan): defconfig arm64 menyalakan 49 platform SoC;
+# rolex cuma butuh Qualcomm. Matikan 48 platform lain (MediaTek, STM32, Exynos,
+# Rockchip, dst) — driver khas platform itu (clock/pinctrl/dll) ikut gugur.
+# Nama simbol diverifikasi dari arch/arm64/Kconfig.platforms tag v6.19.5-r0.
+# CONFIG_ARCH_ACTIONS is not set
+# CONFIG_ARCH_AIROHA is not set
+# CONFIG_ARCH_SUNXI is not set
+# CONFIG_ARCH_ALPINE is not set
+# CONFIG_ARCH_APPLE is not set
+# CONFIG_ARCH_ARTPEC is not set
+# CONFIG_ARCH_AXIADO is not set
+# CONFIG_ARCH_BCM2835 is not set
+# CONFIG_ARCH_BCM_IPROC is not set
+# CONFIG_ARCH_BCMBCA is not set
+# CONFIG_ARCH_BRCMSTB is not set
+# CONFIG_ARCH_BERLIN is not set
+# CONFIG_ARCH_BLAIZE is not set
+# CONFIG_ARCH_BST is not set
+# CONFIG_ARCH_CIX is not set
+# CONFIG_ARCH_EXYNOS is not set
+# CONFIG_ARCH_K3 is not set
+# CONFIG_ARCH_LG1K is not set
+# CONFIG_ARCH_HISI is not set
+# CONFIG_ARCH_KEEMBAY is not set
+# CONFIG_ARCH_MEDIATEK is not set
+# CONFIG_ARCH_MESON is not set
+# CONFIG_ARCH_MICROCHIP is not set
+# CONFIG_ARCH_SPARX5 is not set
+# CONFIG_ARCH_MVEBU is not set
+# CONFIG_ARCH_LAYERSCAPE is not set
+# CONFIG_ARCH_MXC is not set
+# CONFIG_ARCH_S32 is not set
+# CONFIG_ARCH_MA35 is not set
+# CONFIG_ARCH_NPCM is not set
+# CONFIG_ARCH_REALTEK is not set
+# CONFIG_ARCH_RENESAS is not set
+# CONFIG_ARCH_ROCKCHIP is not set
+# CONFIG_ARCH_SEATTLE is not set
+# CONFIG_ARCH_INTEL_SOCFPGA is not set
+# CONFIG_ARCH_SOPHGO is not set
+# CONFIG_ARCH_STM32 is not set
+# CONFIG_ARCH_SYNQUACER is not set
+# CONFIG_ARCH_TEGRA is not set
+# CONFIG_ARCH_TESLA_FSD is not set
+# CONFIG_ARCH_SPRD is not set
+# CONFIG_ARCH_THUNDER is not set
+# CONFIG_ARCH_THUNDER2 is not set
+# CONFIG_ARCH_UNIPHIER is not set
+# CONFIG_ARCH_VEXPRESS is not set
+# CONFIG_ARCH_VISCONTI is not set
+# CONFIG_ARCH_XGENE is not set
+# CONFIG_ARCH_ZYNQMP is not set
