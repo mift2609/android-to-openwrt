@@ -113,7 +113,9 @@ jobs:
           cp "src/arch/$ARCH/boot/dts/${{ steps.dev.outputs.dtb }}" "$OUT/qcom/"
           cp src/.config "$OUT/.config"
           cat "$OUT/Image.gz" "$OUT/qcom/$(basename "${{ steps.dev.outputs.dtb }}")" > "$OUT/Image.gz-dtb"
-          make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" INSTALL_MOD_PATH="$OUT/modules" modules_install
+          # INSTALL_MOD_PATH WAJIB absolut: make -C src pindah cwd ke src/, path relatif
+          # mendarat di src/out/... dan symlink build/source di akhir modules_install gagal.
+          make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" INSTALL_MOD_PATH="$PWD/$OUT/modules" modules_install
           rm -f "$OUT/modules/lib/modules/"*/build "$OUT/modules/lib/modules/"*/source
           make -s -C src ARCH="$ARCH" kernelrelease > "$OUT/kernelrelease"
           echo "kernelrelease=$(cat "$OUT/kernelrelease")" >> "$GITHUB_STEP_SUMMARY"
