@@ -76,3 +76,39 @@ CONFIG_QCOM_Q6V5_PAS=m
 CONFIG_QCOM_PIL_INFO=m
 CONFIG_QRTR=y
 CONFIG_QCOM_SMEM=y
+
+# --- SLIM (permintaan user 13 Nov 2026): bangun HANYA yang dibutuhkan OpenWrt ---
+# hotspot portable + layar console untuk cek log. Di luar itu (kamera, speaker/
+# audio, bluetooth, GPU DRM penuh, driver vendor lain) bikin build lama dan
+# kernel gemuk (defconfig arm64: 3384 =y + 1404 =m, Image 54,6 MB) — matikan.
+# CONFIG_DEBUG_INFO is not set
+# CONFIG_MEDIA_SUPPORT is not set
+# CONFIG_SOUND is not set
+# CONFIG_SOUNDWIRE is not set
+# CONFIG_SLIMBUS is not set
+# CONFIG_BT is not set
+# CONFIG_NFC is not set
+# CONFIG_IIO is not set
+# CONFIG_INPUT_TOUCHSCREEN is not set
+# CONFIG_DRM_MSM is not set
+# CONFIG_DRM_PANFROST is not set
+# CONFIG_DRM_LIMA is not set
+# CONFIG_DRM_ETNAVIV is not set
+# CONFIG_PCI is not set
+# CONFIG_WLAN_VENDOR_BROADCOM is not set
+# CONFIG_WLAN_VENDOR_INTEL is not set
+# CONFIG_WLAN_VENDOR_MEDIATEK is not set
+# CONFIG_WLAN_VENDOR_REALTEK is not set
+# CONFIG_WLAN_VENDOR_TI is not set
+# CONFIG_ATH10K_PCI is not set
+# CONFIG_ATH11K is not set
+# CONFIG_ATH12K is not set
+# CONFIG_NET_VENDOR_BROADCOM is not set
+# CONFIG_NET_VENDOR_INTEL is not set
+# CONFIG_NET_VENDOR_MARVELL is not set
+# CONFIG_NET_VENDOR_MICROSEMI is not set
+# CONFIG_NET_VENDOR_REALTEK is not set
+# jalur hotspot WAJIB tetap hidup (modul, dimuat dari rootfs): WiFi WCNSS rolex
+CONFIG_CFG80211=m
+CONFIG_MAC80211=m
+CONFIG_WCN36XX=m
