@@ -81,7 +81,9 @@ CONFIG_QCOM_SMEM=y
 # hotspot portable + layar console untuk cek log. Di luar itu (kamera, speaker/
 # audio, bluetooth, GPU DRM penuh, driver vendor lain) bikin build lama dan
 # kernel gemuk (defconfig arm64: 3384 =y + 1404 =m, Image 54,6 MB) — matikan.
-# CONFIG_DEBUG_INFO is not set
+# DEBUG_INFO di kernel ini simbol turunan dari choice: mematikannya harus
+# memilih CONFIG_DEBUG_INFO_NONE=y, men-disable DEBUG_INFO langsung dibatalkan olddefconfig
+CONFIG_DEBUG_INFO_NONE=y
 # CONFIG_MEDIA_SUPPORT is not set
 # CONFIG_SOUND is not set
 # CONFIG_SOUNDWIRE is not set
