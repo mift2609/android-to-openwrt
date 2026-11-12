@@ -84,6 +84,9 @@ CONFIG_QCOM_SMEM=y
 # DEBUG_INFO di kernel ini simbol turunan dari choice: mematikannya harus
 # memilih CONFIG_DEBUG_INFO_NONE=y, men-disable DEBUG_INFO langsung dibatalkan olddefconfig
 CONFIG_DEBUG_INFO_NONE=y
+# Anggota choice lama dari defconfig WAJIB dimatikan juga: dua anggota choice =y
+# bersamaan membuat olddefconfig mempertahankan pilihan lama (DWARF_TOOLCHAIN_DEFAULT).
+# CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT is not set
 # CONFIG_MEDIA_SUPPORT is not set
 # CONFIG_SOUND is not set
 # CONFIG_SOUNDWIRE is not set
