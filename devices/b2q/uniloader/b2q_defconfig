@@ -1,0 +1,9 @@
+CONFIG_POSITION_INDEPENDENT=y
+CONFIG_LINUX_KRNL_HEADER_IMG=y
+CONFIG_SM8350=y
+CONFIG_SAMSUNG_B2Q=y
+# TODO UKUR: tiga nilai di bawah disalin dari configs/r0q_defconfig (SM8450) — belum
+# dibuktikan untuk b2q. Salah satu saja salah = uniLoader tidak melompat ke kernel.
+CONFIG_TEXT_BASE=0x87000000
+CONFIG_PAYLOAD_ENTRY=0x80b900000
+CONFIG_RAMDISK_ENTRY=0xb6915000

@@ -51,6 +51,7 @@ jobs:
           echo "cross=$CROSS_COMPILE" >> "$GITHUB_OUTPUT"
           echo "fragment=$KERNEL_CONFIG_FRAGMENT" >> "$GITHUB_OUTPUT"
           echo "base_config=${KERNEL_BASE_DEFCONFIG:-defconfig}" >> "$GITHUB_OUTPUT"
+          echo "dts_src=${DEVICE_DTS_SRC:-}" >> "$GITHUB_OUTPUT"
           echo "device=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
           echo "### $DEVICE_NAME — kernel $TAG" >> "$GITHUB_STEP_SUMMARY"
 
@@ -74,6 +75,12 @@ jobs:
             "${{ steps.dev.outputs.kernel_repo }}/archive/refs/tags/${{ steps.dev.outputs.tag }}.tar.gz"
           tar xzf kernel.tar.gz -C src --strip-components=1
           test -f src/Makefile
+
+      - name: Tambahkan DTS perangkat (kalau belum ada di upstream)
+        if: steps.dev.outputs.dts_src != ''
+        env:
+          DEVICE: ${{ inputs.device }}
+        run: ./scripts/build/apply-device-dts.sh --tree src --src "${{ steps.dev.outputs.dts_src }}"
 
       - name: defconfig keluarga SoC + fragment perangkat (dengan verifikasi)
         env:
@@ -132,11 +139,15 @@ jobs:
         run: ./scripts/build/mkinitramfs.sh
 
       - name: boot.img + verifikasi bongkar-ulang
+        # continue-on-error: perangkat yang MKBOOTIMG_ARGS-nya belum diukur (mis. b2q) bisa
+        # gagal di sini, dan itu BUKAN alasan kehilangan artefak kernel+DTB yang sudah jadi.
+        continue-on-error: true
         env:
           DEVICE: ${{ inputs.device }}
         run: ./scripts/build/pack-bootimg.sh
 
       - name: Unggah artefak (boot.img + kernel + dtb + .config)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: boot-img-${{ inputs.device }}-${{ steps.dev.outputs.tag }}

@@ -1,0 +1,103 @@
+# Fragment config kernel untuk Samsung Galaxy Z Flip3 5G (b2q, SM8350 / Snapdragon 888)
+# Target: kernel mainline (KERNEL_REPO/KERNEL_TAG di device.conf), peran: router OpenWrt
+# HEADLESS (tanpa layar sentuh, tanpa audio, tanpa kamera, tanpa panel foldable).
+#
+# Format: satu opsi per baris. apply-config-fragment.sh MEMVERIFIKASI tiap simbol ada di
+# Kconfig dan benar-benar mendarat di .config. CI juga menolak job kalau ada baris `=y`
+# yang tidak mendarat -> jangan menulis simbol yang belum tentu bisa =y.
+#
+# Aturan =y vs =m:
+#   =y -> wajib sebelum userspace (initramfs tidak memuat modul): pinctrl + GCC + RPMH,
+#         UFS + PHY, USB PHY + dwc3 + gadget, netfilter, console.
+#   =m -> dimuat dari rootfs: ath11k (WiFi) dan remoteproc modem.
+
+# --- 1. arsitektur / VA -------------------------------------------------------
+# sm8350 = Cortex-X1/A78/A55 (ARMv8.2-A), jadi 52-bit VA didukung hardware. Tetap dipaksa
+# 48-bit: tidak ada gunanya untuk router, dan 52-bit menambah jebakan saat bring-up awal.
+CONFIG_ARM64_VA_BITS_48=y
+# CONFIG_ARM64_VA_BITS_52 is not set
+
+# --- 2. inti SoC: clock, pinctrl, power ---------------------------------------
+# Tanpa ini semua node dengan pinctrl-0 (UFS, uart, i2c) menggantung dan sistem diam.
+CONFIG_ARCH_QCOM=y
+CONFIG_PINCTRL_SM8350=y
+CONFIG_SM_GCC_8350=y
+CONFIG_QCOM_CLK_RPMH=y
+CONFIG_QCOM_RPMH=y
+CONFIG_QCOM_RPMHPD=y
+CONFIG_REGULATOR_QCOM_RPMH=y
+CONFIG_ARM_SMMU=y
+
+# --- 3. storage: UFS 3.1 (tempat rootfs) --------------------------------------
+CONFIG_SCSI_UFS_QCOM=y
+CONFIG_PHY_QCOM_QMP_UFS=y
+
+# --- 4. USB: kanal manajemen, WAJIB built-in ---------------------------------
+# PHY sebagai =m = dwc3 defer probe -> /sys/class/udc kosong, gadget tidak pernah bind,
+# perangkat tidak muncul di USB (gejala terbaca seperti "kernel tidak boot").
+CONFIG_PHY_QCOM_QMP_USB=y
+CONFIG_USB_DWC3=y
+CONFIG_USB_DWC3_DUAL_ROLE=y
+CONFIG_USB_GADGET=y
+CONFIG_USB_CONFIGFS=y
+CONFIG_USB_CONFIGFS_RNDIS=y
+CONFIG_USB_CONFIGFS_NCM=y
+CONFIG_USB_F_RNDIS=y
+CONFIG_USB_F_NCM=y
+CONFIG_USB_U_ETHER=y
+CONFIG_USB_LIBCOMPOSITE=y
+
+# --- 5. console (opsional, untuk mendengar keluhan kernel di layar) -----------
+CONFIG_DRM=y
+CONFIG_DRM_SIMPLEDRM=y
+CONFIG_DRM_FBDEV_EMULATION=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+
+# --- 6. filesystem rootfs -----------------------------------------------------
+CONFIG_EXT4_FS=y
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_XZ=y
+CONFIG_OVERLAY_FS=y
+CONFIG_F2FS_FS=y
+
+# --- 7. jaringan + firewall (nftables; firewall4 OpenWrt 24.10) ---------------
+CONFIG_NETFILTER=y
+CONFIG_NF_TABLES=y
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_TABLES_IPV4=y
+CONFIG_NF_TABLES_IPV6=y
+CONFIG_NFT_MASQ=y
+CONFIG_NF_CONNTRACK=y
+CONFIG_NETFILTER_XTABLES=y
+CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
+CONFIG_BRIDGE=y
+CONFIG_VETH=y
+CONFIG_VLAN_8021Q=y
+
+# --- 8. container/chroot (jalur A di HP yang sama, dan untuk testing) ---------
+CONFIG_NAMESPACES=y
+CONFIG_PID_NS=y
+CONFIG_NET_NS=y
+CONFIG_UTS_NS=y
+CONFIG_CGROUPS=y
+
+# --- 9. WiFi + modem sebagai MODUL (dimuat dari rootfs) -----------------------
+# ath11k: b2q memakai WCN6855 keluarga hw1.1 (FastConnect 6900, sama seperti OnePlus 9
+# Pro) -> mainline baru punya WCN6855 hw2.0/hw2.1, hw1.1 masih perlu tambalan. Verifikasi
+# ID chip di HP yang hidup dulu (lspci / dmesg qcacld) sebelum berharap WiFi.
+CONFIG_ATH11K=m
+CONFIG_ATH11K_PCI=m
+CONFIG_MAC80211=m
+CONFIG_CFG80211=m
+CONFIG_RFKILL=y
+CONFIG_QCOM_Q6V5_PAS=m
+CONFIG_QCOM_Q6V5_MSS=m
+CONFIG_MDT_LOADER=m
+
+# --- 10. boot bersih (kegagalan harus terlihat) -------------------------------
+# panic=5 ada di KERNEL_CMDLINE; tanpa ini kernel yang panik diam selamanya.
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_PRINTK=y
+# Tanpa DEBUG_KERNEL, choice DEBUG_INFO tidak tersedia -> menulis DEBUG_INFO_NONE=y akan
+# ditolak validator (kejadian nyata di profil rolex). Karena itu tidak ditulis di sini.

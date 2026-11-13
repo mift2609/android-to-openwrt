@@ -46,6 +46,13 @@ fi
 # --- 2. config dasar + fragment ---------------------------------------------
 log "defconfig platform + fragment perangkat"
 export ARCH CROSS_COMPILE
+
+# --- 1b. DTS perangkat yang belum ada di upstream ---------------------------
+# Tanpa ini `make dtbs` tidak pernah menghasilkan DTB untuk perangkat seperti b2q
+# (sm8350.dtsi sudah upstream, DTS perangkatnya belum). Untuk mido/rolex nilainya kosong.
+if [ -n "${DEVICE_DTS_SRC:-}" ]; then
+  "$(repo_root)/scripts/build/apply-device-dts.sh" --tree "$SRC" --src "$(repo_root)/$DEVICE_DTS_SRC"
+fi
 make -C "$SRC" ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" defconfig >/dev/null
 FRAG="$(repo_root)/${KERNEL_CONFIG_FRAGMENT:-devices/$DEVICE/kernel.config.fragment}"
 [ -f "$FRAG" ] || die "fragment config tidak ada: $FRAG"
