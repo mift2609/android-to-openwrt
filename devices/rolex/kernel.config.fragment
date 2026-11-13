@@ -182,3 +182,28 @@ CONFIG_WCN36XX=m
 CONFIG_PHY_QCOM_USB_HS_28NM=y
 CONFIG_PHY_QCOM_USB_HS=y
 CONFIG_EXTCON_USB_DUMMY=y
+
+# --- AKAR MASALAH eMMC / PINCTRL (temuan 13 Nov 2026, probe initramfs v5) ------------
+# Bukti dari perangkat (log lewat kanal deskriptor USB):
+#   mmc=            (KOSONG: /dev/mmcblk* tidak ada)
+#   sdhci_hit=0     (tidak satu pun baris sdhci/mmc di dmesg)
+#   deferred=78b6000.i2c platform: wait for supplier /soc@0/pinctrl@1000000/blsp1-i...
+# Artinya pinctrl@1000000 tidak pernah ter-bind, sehingga SEMUA node dengan pinctrl-0
+# menggantung — termasuk mmc@7824900 (eMMC). Tanpa eMMC tidak ada rootfs router.
+# Sebabnya: driver pinctrl-msm8917.c tidak bisa dibangun di tag ini karena Makefile-nya
+# memakai CONFIG_PINCTRL_MSM8917 sementara Kconfig fork tidak mendefinisikan simbol itu
+# (pinctrl-msm8916.c hanya cocok dengan "qcom,msm8916-pinctrl"). CI menambalnya lewat
+# scripts/build/ensure-kconfig-symbols.sh SEBELUM fragment ini diterapkan.
+CONFIG_PINCTRL_MSM8917=y
+CONFIG_PINCTRL_MSM=y
+CONFIG_INTERCONNECT_QCOM_MSM8916=y
+CONFIG_MSM_GCC_8917=y
+# storage: sudah =y di msm8916_defconfig, ditulis eksplisit supaya perubahan config
+# keluarga di masa depan tidak diam-diam mematikan eMMC.
+CONFIG_MMC=y
+CONFIG_MMC_BLOCK=y
+CONFIG_MMC_SDHCI=y
+CONFIG_MMC_SDHCI_PLTFM=y
+CONFIG_MMC_SDHCI_MSM=y
+CONFIG_REGULATOR_QCOM_SMD_RPM=y
+CONFIG_QCOM_CLK_SMD_RPM=y

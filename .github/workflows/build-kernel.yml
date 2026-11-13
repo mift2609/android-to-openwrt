@@ -50,6 +50,7 @@ jobs:
           echo "dtb=$DTB"       >> "$GITHUB_OUTPUT"
           echo "cross=$CROSS_COMPILE" >> "$GITHUB_OUTPUT"
           echo "fragment=$KERNEL_CONFIG_FRAGMENT" >> "$GITHUB_OUTPUT"
+          echo "base_config=${KERNEL_BASE_DEFCONFIG:-defconfig}" >> "$GITHUB_OUTPUT"
           echo "device=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
           echo "### $DEVICE_NAME — kernel $TAG" >> "$GITHUB_STEP_SUMMARY"
 
@@ -74,13 +75,25 @@ jobs:
           tar xzf kernel.tar.gz -C src --strip-components=1
           test -f src/Makefile
 
-      - name: defconfig + fragment perangkat (dengan verifikasi)
+      - name: Tambal simbol Kconfig yang hilang di fork
+        run: |
+          set -e
+          # Fork bisa punya driver yang Makefile-nya memakai simbol yang tidak didefinisikan
+          # Kconfig (rolex: PINCTRL_MSM8917) -> driver mustahil dibangun. Skrip ini idempoten.
+          ./scripts/build/ensure-kconfig-symbols.sh src
+
+      - name: defconfig keluarga SoC + fragment perangkat (dengan verifikasi)
         env:
           ARCH: ${{ steps.dev.outputs.arch }}
           CROSS_COMPILE: ${{ steps.dev.outputs.cross }}
         run: |
           set -e
-          make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" defconfig
+          # JANGAN memakai `defconfig` upstream: config itu tidak menyalakan driver keluarga
+          # SoC ini (pinctrl, MMC_SDHCI_MSM, regulator RPM SMD, GCC clock) sehingga eMMC dan
+          # hampir semua periferal tidak pernah probe. Terbukti di rolex lewat probe initramfs:
+          # /dev/mmcblk* kosong, devices_deferred memuat i2c yang menunggu pinctrl@1000000.
+          # Dasar yang benar: config keluarga dari fork (msm8916_defconfig untuk msm89x7).
+          make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" "${{ steps.dev.outputs.base_config }}"
           ./scripts/build/apply-config-fragment.sh --tree src --fragment "${{ steps.dev.outputs.fragment }}"
           # Jangan hardcode simbol SoC di sini: perangkat lain (rolex = MSM_GCC_8917) tidak punya
           # MSM_GCC_8953, dan grep yang gagal = job CI gagal padahal build-nya sehat. Yang benar:
