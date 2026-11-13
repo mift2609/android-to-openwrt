@@ -43,8 +43,11 @@ profil + DTS rintisan supaya build dan pengujian bisa berjalan bertahap.
 2. **Build CI** (`build-kernel.yml -f device=b2q`): membuktikan fragment config mendarat di
    `.config` dan DTS perangkat benar-benar dikompilasi jadi DTB. Nol risiko.
 3. **Uji boot** (butuh izin eksplisit, satu partisi saja): uniLoader berisi Image+DTB+initramfs
-   ditulis ke `boot`; TWRP tetap di `recovery` sehingga jalur pulih selalu ada
-   (`VolUp` → TWRP → `dd` balik `boot.img` asli). Tanpa fastboot: Samsung hanya punya Odin/TWRP.
+   ditulis ke `boot`; `recovery` **tidak disentuh** — di sana ada TWRP (terbukti: ramdisk
+   partisi recovery memuat `twres/` + `twrp_ramdisk-timestamp`), jadi jalur pulih selalu ada:
+   `VolUp` → TWRP → restore `boot.img` asli. Salinan restore sudah ditaruh **di perangkat**
+   (`/sdcard/b2q-backup/boot.img` + `recovery.img`, md5 diverifikasi di HP) supaya pemulihan
+   tidak bergantung pada host. Lapis kedua: tarball Odin `images/boot.tar` + `recovery.tar`.
 4. **Rootfs OpenWrt** ke `userdata` (UFS 3.1, image sector **4096**) baru setelah langkah 3
    menunjukkan `lsusb` gadget hidup.
 5. **WiFi**: verifikasi chip dulu (`lspci`, `dmesg | grep -i qcacld` di X-ROM), lalu tambalan

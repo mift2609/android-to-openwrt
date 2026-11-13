@@ -125,6 +125,10 @@ jobs:
           cp "src/arch/$ARCH/boot/Image.gz" "$OUT/Image.gz"
           cp "src/arch/$ARCH/boot/dts/${{ steps.dev.outputs.dtb }}" "$OUT/qcom/"
           cp src/.config "$OUT/.config"
+          # .config juga disalin dengan nama non-titik: actions/upload-artifact default
+          # include-hidden-files:false, jadi berkas titik TIDAK ikut terunggah dan bukti
+          # konfigurasi hilang dari artefak (kejadian nyata di run pertama b2q).
+          cp src/.config "$OUT/kernel.config"
           cat "$OUT/Image.gz" "$OUT/qcom/$(basename "${{ steps.dev.outputs.dtb }}")" > "$OUT/Image.gz-dtb"
           # INSTALL_MOD_PATH WAJIB absolut: make -C src pindah cwd ke src/, path relatif
           # mendarat di src/out/... dan symlink build/source di akhir modules_install gagal.
@@ -159,6 +163,7 @@ jobs:
             out/${{ inputs.device }}/Image.gz-dtb
             out/${{ inputs.device }}/qcom/*.dtb
             out/${{ inputs.device }}/.config
+            out/${{ inputs.device }}/kernel.config
             out/${{ inputs.device }}/kernelrelease
 
       - name: Unggah modul (opsional)
