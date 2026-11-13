@@ -2,8 +2,20 @@ CONFIG_POSITION_INDEPENDENT=y
 CONFIG_LINUX_KRNL_HEADER_IMG=y
 CONFIG_SM8350=y
 CONFIG_SAMSUNG_B2Q=y
-# TODO UKUR: tiga nilai di bawah disalin dari configs/r0q_defconfig (SM8450) — belum
-# dibuktikan untuk b2q. Salah satu saja salah = uniLoader tidak melompat ke kernel.
-CONFIG_TEXT_BASE=0x87000000
-CONFIG_PAYLOAD_ENTRY=0x80b900000
-CONFIG_RAMDISK_ENTRY=0xb6915000
+# --- Alamat: DIHITUNG dari peta reserved-memory b2q sendiri -------------------
+# Sumber: dtb di dalam boot image TWRP perangkat (bukan ponsel lain), di-decompile lalu
+# daftar carveout-nya dibaca. Carveout Samsung tertinggi = dfps_data_region di
+# 0xe3300000 + 1 MiB, jadi mulai 0xe3400000 ke atas DRAM bebas (RAM 8 GiB dari 0x80000000).
+# Ukuran yang harus muat: image loader ~55 MB, kernel Image ~55 MB.
+#   TEXT_BASE      0xf0000000  loader sendiri            (0xf0000000..0xf3700000)
+#   PAYLOAD_ENTRY  0xf8000000  kernel Image              (0xf8000000..0xfb700000)
+#   RAMDISK_ENTRY  0xfc000000  initramfs
+#   DTB_ENTRY      0xe4000000  DTB hasil relokasi (di luar image loader)
+# JANGAN memakai nilai board lain sebagai titik awal: r0q/gts8wifi (SM8450) memakai
+# 0x87000000/0x80b900000/0xb6915000 yang jatuh DI DALAM carveout b2q (pil_adsp/pil_modem),
+# dan board tundra (Motorola SM8350, 0x90000000) juga jatuh di pil_modem b2q.
+CONFIG_TEXT_BASE=0xf0000000
+CONFIG_PAYLOAD_ENTRY=0xf8000000
+CONFIG_RAMDISK_ENTRY=0xfc000000
+CONFIG_DTB_RELOCATE=y
+CONFIG_DTB_ENTRY=0xe4000000
