@@ -1,0 +1,29 @@
+From: mift2609 <rolex>
+Subject: [PATCH] net: wwan: qcom_bam_dmux: register netdev when channel reopened
+
+The modem may send OPEN for a channel the driver already considers open
+(e.g. after a modem restart or when the AP re-opens the data port). The
+driver then only logged "Channel already open" and returned, so a netdev
+that was never registered stayed missing and the data call could never be
+brought up. Do the same work as a fresh open in that path.
+
+Upstream-Status: Inappropriate (device/firmware workaround)
+---
+--- a/drivers/net/wwan/qcom_bam_dmux.c
++++ b/drivers/net/wwan/qcom_bam_dmux.c
+@@ -545,6 +545,15 @@
+ 
+ 	if (__test_and_set_bit(hdr->ch, dmux->remote_channels)) {
+ 		dev_warn(dmux->dev, "Channel already open: %u\n", hdr->ch);
++		/*
++		 * The netdev may not exist yet although the channel is marked as open
++		 * (e.g. after a modem restart or when the AP re-opens the data port).
++		 * Without it there is no data path at all, so make sure it exists.
++		 */
++		if (netdev)
++			netif_device_attach(netdev);
++		else
++			schedule_work(&dmux->register_netdev_work);
+ 		return;
+ 	}
+ 

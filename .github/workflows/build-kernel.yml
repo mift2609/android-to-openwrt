@@ -82,6 +82,24 @@ jobs:
           DEVICE: ${{ inputs.device }}
         run: ./scripts/build/apply-device-dts.sh --tree src --src "${{ steps.dev.outputs.dts_src }}"
 
+      - name: Tambalan kernel perangkat (kalau ada)
+        env:
+          DEVICE: ${{ inputs.device }}
+        run: |
+          set -e
+          dir="devices/$DEVICE/patches"
+          if [ ! -d "$dir" ]; then echo "tidak ada tambalan untuk $DEVICE"; exit 0; fi
+          n=0
+          for f in "$dir"/*.patch; do
+            [ -e "$f" ] || continue
+            echo "== terapkan $(basename "$f")"
+            # patch dulu sebagai percobaan: kalau tidak bersih, job HARUS gagal (bukan diam-diam)
+            patch -p1 -d src --dry-run -i "$PWD/$f" >/dev/null
+            patch -p1 -d src -i "$PWD/$f"
+            n=$((n+1))
+          done
+          echo "tambalan diterapkan: $n"
+
       - name: defconfig keluarga SoC + fragment perangkat (dengan verifikasi)
         env:
           ARCH: ${{ steps.dev.outputs.arch }}

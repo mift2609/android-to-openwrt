@@ -33,6 +33,25 @@
 	compatible = "samsung,b2q", "qcom,sm8350";
 	chassis-type = "handset";
 
+	/*
+	 * BANKS RAM HARUS DITULIS EKSPLISIT DI SINI.
+	 *
+	 * Di sm8350.dtsi upstream node `/memory` sengaja berukuran 0 dengan komentar
+	 * "We expect the bootloader to fill in the size". Bootloader Samsung (ABL) memang
+	 * mengisinya untuk Android — TETAPI tidak saat image di-boot lewat uniLoader, dan
+	 * uniLoader tidak menambal /memory. Akibatnya kernel menerima 0 byte RAM dan
+	 * panik seketika sebelum ada console: perangkat diam total, tanpa USB, tanpa
+	 * crash-download. Persis kegagalan senyap yang didokumentasikan port Tab S8+/S22.
+	 *
+	 * 8 GiB pada 0x80000000 — sesuai `dram_info=01,08,00,8G` di cmdline stok perangkat.
+	 * Carveout Samsung (hyp, pil_*, trustedvm, removed, splash) semuanya ada di dalam
+	 * bank ini dan sudah dikurangkan lewat node reserved-memory di bawah.
+	 */
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x02 0x00000000>;	/* 8 GiB */
+	};
+
 	aliases {
 		serial0 = &uart2;
 	};
