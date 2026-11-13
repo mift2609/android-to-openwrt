@@ -75,13 +75,6 @@ jobs:
           tar xzf kernel.tar.gz -C src --strip-components=1
           test -f src/Makefile
 
-      - name: Tambal simbol Kconfig yang hilang di fork
-        run: |
-          set -e
-          # Fork bisa punya driver yang Makefile-nya memakai simbol yang tidak didefinisikan
-          # Kconfig (rolex: PINCTRL_MSM8917) -> driver mustahil dibangun. Skrip ini idempoten.
-          ./scripts/build/ensure-kconfig-symbols.sh src
-
       - name: defconfig keluarga SoC + fragment perangkat (dengan verifikasi)
         env:
           ARCH: ${{ steps.dev.outputs.arch }}

@@ -190,10 +190,10 @@ CONFIG_EXTCON_USB_DUMMY=y
 #   deferred=78b6000.i2c platform: wait for supplier /soc@0/pinctrl@1000000/blsp1-i...
 # Artinya pinctrl@1000000 tidak pernah ter-bind, sehingga SEMUA node dengan pinctrl-0
 # menggantung — termasuk mmc@7824900 (eMMC). Tanpa eMMC tidak ada rootfs router.
-# Sebabnya: driver pinctrl-msm8917.c tidak bisa dibangun di tag ini karena Makefile-nya
-# memakai CONFIG_PINCTRL_MSM8917 sementara Kconfig fork tidak mendefinisikan simbol itu
-# (pinctrl-msm8916.c hanya cocok dengan "qcom,msm8916-pinctrl"). CI menambalnya lewat
-# scripts/build/ensure-kconfig-symbols.sh SEBELUM fragment ini diterapkan.
+# Sebabnya: config dasar yang dipakai CI adalah `defconfig` upstream, yang tidak menyalakan
+# driver pinctrl keluarga ini (`CONFIG_PINCTRL_MSM8917` ada di drivers/pinctrl/qcom/Kconfig.msm
+# tapi tidak pernah disetel). Dasar yang benar = msm8916_defconfig (KERNEL_BASE_DEFCONFIG),
+# dan simbol di bawah disetel eksplisit supaya perilakunya tidak bergantung pada config keluarga.
 CONFIG_PINCTRL_MSM8917=y
 CONFIG_PINCTRL_MSM=y
 CONFIG_INTERCONNECT_QCOM_MSM8916=y
