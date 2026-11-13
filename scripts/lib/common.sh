@@ -76,11 +76,36 @@ fetch_to() {
 
 # --- perintah device (SSH / adb), dipakai jalur A -----------------------------
 # Format target: ssh:user@host (mis. ssh:root@192.168.42.1) atau adb:<serial>
+#
+# adb di ROM user: `adb root` TIDAK bisa (adbd user build). Satu-satunya jalur root di
+# perangkat ber-Magisk/KernelSU adalah `su`. Karena perintah di jalur A sering berupa
+# skrip multi-baris dengan kutip bersarang, skrip dikirim lewat stdin ke `su -c 'sh -s'`
+# alih-alih disisipkan ke argumen — jadi tidak ada kutip yang perlu di-escape.
+# Hasil deteksi di-cache di _ADB_UID supaya tidak ada panggilan adb ekstra tiap perintah.
+_adb_uid() {
+  if [ -z "${_ADB_UID:-}" ]; then
+    _ADB_UID=$(adb ${ADB_SERIAL:+-s "$ADB_SERIAL"} shell 'id -u' 2>/dev/null | tr -d '\r')
+    [ -n "$_ADB_UID" ] || _ADB_UID=none
+  fi
+  printf '%s' "$_ADB_UID"
+}
+
+_adb_su_available() {
+  adb ${ADB_SERIAL:+-s "$ADB_SERIAL"} shell 'command -v su' 2>/dev/null | tr -d '\r' | grep -q .
+}
+
 run_on_device() {
   case "${TARGET:?TARGET belum diset}" in
     ssh:*) ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=10 "${TARGET#ssh:}" "$@" ;;
-    adb:*) adb ${ADB_SERIAL:+-s "$ADB_SERIAL"} shell "$@" ;;
+    adb:*)
+      if [ "$(_adb_uid)" = "0" ]; then
+        adb ${ADB_SERIAL:+-s "$ADB_SERIAL"} shell "$@"
+      elif _adb_su_available; then
+        printf '%s\n' "$@" | adb ${ADB_SERIAL:+-s "$ADB_SERIAL"} shell 'su -c "sh -s"'
+      else
+        die "adbd bukan root dan tidak ada 'su' di perangkat — jalur A butuh root (Magisk/KernelSU)"
+      fi ;;
     *) die "TARGET harus ssh:user@host atau adb:<serial> (dapat: $TARGET)" ;;
   esac
 }
@@ -95,6 +120,6 @@ push_to_device() {  # push_to_device <lokal> <remote>
 # Pastikan perangkat memang root (jalur A butuh root untuk chroot)
 assert_device_root() {
   _u=$(run_on_device 'id -u' 2>/dev/null | tr -d '\r')
-  [ "$_u" = "0" ] || die "sesi ke perangkat bukan root (id -u = ${_u:-kosong}). Untuk ssh: set PermitRootLogin/authorized_keys root, untuk adb: pakai 'adb root'."
+  [ "$_u" = "0" ] || die "sesi ke perangkat bukan root (id -u = ${_u:-kosong}). Untuk ssh: set PermitRootLogin/authorized_keys root; untuk adb di ROM user: 'adb root' tidak bisa, pakai Magisk/KernelSU (skrip ini otomatis memakai 'su')."
   ok "perangkat menjawab sebagai root"
 }

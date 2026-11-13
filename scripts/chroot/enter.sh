@@ -57,12 +57,26 @@ mode_services() {
   say "menjalankan layanan inti tanpa procd (dnsmasq, dropbear, uhttpd)"
   # Tanpa procd tidak ada /etc/init.d/* start yang lengkap; jalankan langsung.
   # Konfigurasi tetap dibaca dari /etc/config (UCI), jadi  hasilnya sama dengan LuCI.
+  #
+  # PATH WAJIB diset di dalam chroot: chroot mewarisi PATH Android
+  # (/product/bin:/system/bin:...) yang TIDAK memuat /bin//usr/bin rootfs, sehingga
+  # busybox applet (hostname, netstat, sleep) "not found" padahal ada. Gejalanya
+  # menyesatkan: seolah rootfs rusak, padahal hanya PATH.
   chroot "$R" /bin/sh -c '
+    export PATH=/usr/sbin:/usr/bin:/sbin:/bin
     set -x
+    # Hostkey dropbear tidak ada di tarball rootfs dan biasanya dibuat oleh
+    # /etc/init.d/dropbear saat boot pertama (lewat procd). Tanpa itu dropbear keluar
+    # seketika: "Early exit: No hostkeys available". Bikin di sini.
+    if [ ! -f /etc/dropbear/dropbear_rsa_host_key ]; then
+      mkdir -p /etc/dropbear
+      /usr/sbin/dropbearkey -t rsa -s 2048 -f /etc/dropbear/dropbear_rsa_host_key >/dev/null 2>&1
+      /usr/sbin/dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1
+    fi
     for s in dnsmasq dropbear uhttpd; do
       [ -x /usr/sbin/$s ] || [ -x /usr/sbin/$s ] || continue
       case "$s" in
-        dnsmasq) exec /usr/sbin/dnsmasq -C /var/etc/dnsmasq.conf.cfg01411c 2>/dev/null || /usr/sbin/dnsmasq & ;;
+        dnsmasq) /usr/sbin/dnsmasq -C /var/etc/dnsmasq.conf.cfg01411c 2>/dev/null || /usr/sbin/dnsmasq & ;;
         dropbear) /usr/sbin/dropbear -p 22 & ;;
         uhttpd)   /usr/sbin/uhttpd -f -h /www -r "$(hostname)" & ;;
       esac

@@ -41,6 +41,16 @@ if [ -n "$DEVICE" ]; then load_device; DEST=${DEST:-$CHROOT_DIR}; else
   DEST=${DEST:-/data/local/openwrt}; log "tanpa --device: pakai CHROOT_DIR default $DEST"
 fi
 
+# --- dorong berkas ke rootfs milik root --------------------------------------
+# `adb push` menulis sebagai user 'shell' (non-root), sedangkan /data/local/openwrt dimiliki
+# root -> push langsung gagal dengan "Permission denied". Jadi: dorong ke /data/local/tmp
+# (world-writable), lalu pindahkan sebagai root.
+push_as_root() {  # <lokal> <remote>
+  _tmp="/data/local/tmp/.push.$$.$(basename "$2")"
+  push_to_device "$1" "$_tmp" || die "push ke $_tmp gagal"
+  run_on_device "mv -f '$_tmp' '$2'" || die "pindah ke $2 gagal (root?)"
+}
+
 assert_device_root
 
 # --- 1. alat di perangkat -----------------------------------------------------
@@ -55,16 +65,25 @@ REMOTE_TGZ="/data/local/tmp/openwrt-rootfs.tar.gz"
 log "dorong $(basename "$TARBALL") ($(mib_of "$TARBALL") MiB) -> $REMOTE_TGZ"
 push_to_device "$TARBALL" "$REMOTE_TGZ"
 
-# BusyBox/toybox tar: -z tidak selalu ada. Ekstrak ke stdout lewat gzip bila perlu.
-log "ekstrak ke $DEST (perangkat)"
+# BusyBox/busybox tar, BUKAN toybox: toybox tar MENOLAK membuat symlink absolut yang
+# mengarah keluar dir ekstraksi (rootfs OpenWrt penuh symlink seperti /etc/TZ -> /tmp/TZ),
+# lalu berhenti dengan "not under ..." — ekstraksi menggantung setengah jalan.
+# Magisk membawa busybox di /data/adb/magisk/busybox.
+log "ekstrak ke $DEST (perangkat, busybox tar kalau ada)"
+case "$DEST" in /data/*) : ;; *) die "DEST harus di bawah /data (dapat: $DEST)" ;; esac
 run_on_device "
 set -e
-mkdir -p '$DEST'
-if tar -tzf '$REMOTE_TGZ' >/dev/null 2>&1; then
-  tar -xzf '$REMOTE_TGZ' -C '$DEST'
-else
-  gzip -dc '$REMOTE_TGZ' | tar -x -C '$DEST'
+if [ -x /data/adb/magisk/busybox ]; then TAR='/data/adb/magisk/busybox tar'; else TAR=tar; fi
+# rendisi bersih: tar toybox yang menemukan berkas lama di dir tujuan berhenti dengan error
+if [ -e '$DEST/bin/busybox' ] || [ -e '$DEST/etc/openwrt_release' ]; then
+  # WAJIB umount dulu: sisa mount /proc /sys /dev dari sesi enter.sh sebelumnya membuat
+  # 'rm -rf' gagal dengan 'Operation not permitted' pada setiap entri.
+  [ -x '$DEST/enter.sh' ] && sh '$DEST/enter.sh' --umount >/dev/null 2>&1 || true
+  for m in dev/pts dev sys proc; do umount -l '$DEST/'\$m 2>/dev/null || true; done
+  rm -rf '$DEST'
 fi
+mkdir -p '$DEST'
+cd '$DEST' && \$TAR -xzf '$REMOTE_TGZ'
 echo '[ok] ekstraksi selesai'
 "
 
@@ -81,11 +100,18 @@ chmod 1777 '$DEST/tmp'
 ENTER_SRC="$(repo_root)/scripts/chroot/enter.sh"
 if [ -f "$ENTER_SRC" ]; then
   log "pasang enter.sh"
-  push_to_device "$ENTER_SRC" "$DEST/enter.sh"
+  push_as_root "$ENTER_SRC" "$DEST/enter.sh"
   run_on_device "chmod 755 '$DEST/enter.sh'"
 fi
 
-log "tulis konfigurasi awal OpenWrt (hostname, IP, izinkan SSH/LuCI dari LAN)"
+log "tulis konfigurasi awal OpenWrt (hostname, IP, izin SSH/LuCI dari LAN)"
+# /etc/config/system dan /etc/config/network TIDAK ada di dalam tarball rootfs armsr:
+# keduanya dibuat saat boot pertama oleh /bin/config_generate (dipanggil procd). Di jalur A
+# tanpa procd berkas itu tidak pernah lahir, dan setiap `uci get` menjawab "Entry not found"
+# — bukan karena rootfs rusak. Jadi jalankan eksplisit, lalu set nilainya lewat UCI.
+log "bikin /etc/config/system + network (config_generate)"
+run_on_device "chroot '$DEST' /bin/sh -c 'export PATH=/usr/sbin:/usr/bin:/sbin:/bin; [ -f /etc/config/system ] || /bin/config_generate >/dev/null 2>&1; echo config_generate=\$?'"
+run_on_device "chroot '$DEST' /bin/sh -c 'export PATH=/usr/sbin:/usr/bin:/sbin:/bin; uci -q set system.@system[0].hostname='${HOSTNAME_OVERRIDE:-b2q-openwrt}' ; uci -q set system.@system[0].timezone='WIB-7'; uci -q commit system; uci -q set network.lan.ipaddr='${LAN_IP:-192.168.44.1}'; uci -q set network.lan.netmask='255.255.255.0'; uci -q commit network; echo -n hostname=; uci -q get system.@system[0].hostname; echo -n \" lanip=\"; uci -q get network.lan.ipaddr'"
 UD="$DEST/etc/uci-defaults/99-android-openwrt"
 printf '%s\n' '#!/bin/sh' > /tmp/99-android-openwrt
 {
@@ -101,7 +127,7 @@ printf '%s\n' '#!/bin/sh' > /tmp/99-android-openwrt
   echo "/etc/init.d/uhttpd enable 2>/dev/null || true"
   echo "exit 0"
 } >> /tmp/99-android-openwrt
-push_to_device /tmp/99-android-openwrt "$UD"
+push_as_root /tmp/99-android-openwrt "$UD"
 run_on_device "chmod 755 '$UD'"
 
 [ "$KEEP" = 1 ] || run_on_device "rm -f '$REMOTE_TGZ'"

@@ -89,9 +89,11 @@ CONFIG_UTS_NS=y
 CONFIG_CGROUPS=y
 
 # --- 9. WiFi + modem sebagai MODUL (dimuat dari rootfs) -----------------------
-# ath11k: b2q memakai WCN6855 keluarga hw1.1 (FastConnect 6900, sama seperti OnePlus 9
-# Pro) -> mainline baru punya WCN6855 hw2.0/hw2.1, hw1.1 masih perlu tambalan. Verifikasi
-# ID chip di HP yang hidup dulu (lspci / dmesg qcacld) sebelum berharap WiFi.
+# WiFi b2q = PCI 0000:01:00.0, vendor 0x17cb device 0x1101 = QCA6390 (diukur di HP,
+# 2026-11-14). Kabar baik: mainline ath11k MENDUKUNG QCA6390 (ATH11K_HW_QCA6390_HW20;
+# firmware ath11k/QCA6390/hw2.0/*) — jadi TIDAK perlu tambalan hw1.1 seperti dugaan awal
+# (dugaan itu berlaku untuk WCN6851, chip yang berbeda). Yang tetap perlu: firmware dari
+# perangkat sendiri (amss.bin/m3.bin/board-2.bin dari partisi firmware vendor).
 CONFIG_ATH11K=m
 CONFIG_ATH11K_PCI=m
 CONFIG_MAC80211=m
