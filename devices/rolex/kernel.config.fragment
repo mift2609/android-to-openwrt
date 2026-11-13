@@ -84,9 +84,12 @@ CONFIG_QCOM_SMEM=y
 # DEBUG_INFO di kernel ini simbol turunan dari choice: mematikannya harus
 # memilih CONFIG_DEBUG_INFO_NONE=y, men-disable DEBUG_INFO langsung dibatalkan olddefconfig
 CONFIG_DEBUG_INFO_NONE=y
-# Anggota choice lama dari defconfig WAJIB dimatikan juga: dua anggota choice =y
-# bersamaan membuat olddefconfig mempertahankan pilihan lama (DWARF_TOOLCHAIN_DEFAULT).
+# Anggota choice lain WAJIB dimatikan juga: dua anggota choice =y bersamaan membuat
+# olddefconfig mempertahankan pilihan lama (terbukti di CI: DEBUG_INFO_NONE "ingin y"
+# tetap tidak mendarat saat anggota default masih menyala).
 # CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT is not set
+# CONFIG_DEBUG_INFO_DWARF4 is not set
+# CONFIG_DEBUG_INFO_DWARF5 is not set
 # CONFIG_MEDIA_SUPPORT is not set
 # CONFIG_SOUND is not set
 # CONFIG_SOUNDWIRE is not set
@@ -196,6 +199,9 @@ CONFIG_EXTCON_USB_DUMMY=y
 # dan simbol di bawah disetel eksplisit supaya perilakunya tidak bergantung pada config keluarga.
 CONFIG_PINCTRL_MSM8917=y
 CONFIG_PINCTRL_MSM=y
+# INTERCONNECT_QCOM_MSM8916 punya `depends on INTERCONNECT_QCOM` — tanpa induk itu
+# simbolnya tidak akan pernah mendarat (terbukti di CI: "ingin y" tapi tidak masuk .config).
+CONFIG_INTERCONNECT_QCOM=y
 CONFIG_INTERCONNECT_QCOM_MSM8916=y
 CONFIG_MSM_GCC_8917=y
 # storage: sudah =y di msm8916_defconfig, ditulis eksplisit supaya perubahan config
