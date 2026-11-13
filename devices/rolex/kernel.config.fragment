@@ -81,12 +81,13 @@ CONFIG_QCOM_SMEM=y
 # hotspot portable + layar console untuk cek log. Di luar itu (kamera, speaker/
 # audio, bluetooth, GPU DRM penuh, driver vendor lain) bikin build lama dan
 # kernel gemuk (defconfig arm64: 3384 =y + 1404 =m, Image 54,6 MB) — matikan.
-# DEBUG_INFO di kernel ini simbol turunan dari choice: mematikannya harus
-# memilih CONFIG_DEBUG_INFO_NONE=y, men-disable DEBUG_INFO langsung dibatalkan olddefconfig
-CONFIG_DEBUG_INFO_NONE=y
-# Anggota choice lain WAJIB dimatikan juga: dua anggota choice =y bersamaan membuat
-# olddefconfig mempertahankan pilihan lama (terbukti di CI: DEBUG_INFO_NONE "ingin y"
-# tetap tidak mendarat saat anggota default masih menyala).
+# DEBUG_INFO: choice "Debug information" di lib/Kconfig.debug HANYA muncul kalau
+# DEBUG_KERNEL=y. Dasar config msm8916_defconfig tidak menyalakan DEBUG_KERNEL, jadi
+# anggota choice-nya tidak bisa disetel (=y ditolak: "ingin y" tapi tidak mendarat di CI).
+# Tanpa DEBUG_INFO kernel memang sudah dibangun tanpa debug info -> tidak ada yang perlu
+# dimatikan. Baris "is not set" di bawah tetap dipertahankan sebagai niat tertulis kalau
+# suatu saat DEBUG_KERNEL dinyalakan.
+# CONFIG_DEBUG_INFO_NONE is not set
 # CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT is not set
 # CONFIG_DEBUG_INFO_DWARF4 is not set
 # CONFIG_DEBUG_INFO_DWARF5 is not set
