@@ -35,6 +35,9 @@ CONFIG_PHY_QCOM_QMP_UFS=y
 # --- 4. USB: kanal manajemen, WAJIB built-in ---------------------------------
 # PHY sebagai =m = dwc3 defer probe -> /sys/class/udc kosong, gadget tidak pernah bind,
 # perangkat tidak muncul di USB (gejala terbaca seperti "kernel tidak boot").
+# Induk menu PHY_QCOM_QMP juga wajib =y: dengan =m (default arm64 defconfig) anak-anaknya
+# tidak bisa =y sama sekali — terbukti di validator, bukan tebakan.
+CONFIG_PHY_QCOM_QMP=y
 CONFIG_PHY_QCOM_QMP_USB=y
 CONFIG_USB_DWC3=y
 CONFIG_USB_DWC3_DUAL_ROLE=y
@@ -61,6 +64,10 @@ CONFIG_OVERLAY_FS=y
 CONFIG_F2FS_FS=y
 
 # --- 7. jaringan + firewall (nftables; firewall4 OpenWrt 24.10) ---------------
+# NF_NAT ditulis eksplisit: dengan NETFILTER_ADVANCED=y ia TIDAK punya default, jadi
+# tanpa baris ini NFT_MASQ dan XT_TARGET_MASQUERADE diam-diam tidak mendarat
+# (validator CI/`apply-config-fragment.sh` yang menemukannya, bukan asumsi).
+CONFIG_NF_NAT=y
 CONFIG_NETFILTER=y
 CONFIG_NF_TABLES=y
 CONFIG_NF_TABLES_INET=y
@@ -92,7 +99,7 @@ CONFIG_CFG80211=m
 CONFIG_RFKILL=y
 CONFIG_QCOM_Q6V5_PAS=m
 CONFIG_QCOM_Q6V5_MSS=m
-CONFIG_MDT_LOADER=m
+CONFIG_QCOM_MDT_LOADER=m
 
 # --- 10. boot bersih (kegagalan harus terlihat) -------------------------------
 # panic=5 ada di KERNEL_CMDLINE; tanpa ini kernel yang panik diam selamanya.

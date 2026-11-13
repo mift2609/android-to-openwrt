@@ -28,13 +28,19 @@ done
 
 [ -n "$TREE" ] || die "--tree wajib (pohon kernel yang sudah diekstrak)"
 
-# Ambil nilai dari profil perangkat kalau tidak diberikan eksplisit
+# Ambil nilai dari profil perangkat kalau tidak diberikan eksplisit.
+# DEVICE hanya wajib kalau ARCH/DTB belum ada di environment — pemanggilan ad-hoc
+# (--tree ... --src ...) tidak perlu profil.
 if [ -z "$SRC" ] || [ -z "${ARCH:-}" ] || [ -z "${DTB:-}" ]; then
-  load_device
-  [ -n "$SRC" ] || SRC="$(repo_root)/${DEVICE_DTS_SRC:-}"
+  if [ -n "${DEVICE:-}" ]; then
+    load_device
+    [ -n "$SRC" ] || SRC="$(repo_root)/${DEVICE_DTS_SRC:-}"
+  else
+    ARCH=${ARCH:-arm64}
+    [ -n "$SRC" ] || die "--src wajib kalau DEVICE tidak diset"
+  fi
 fi
 [ -n "$ARCH" ] || die "ARCH kosong"
-[ -n "$DTB" ]  || die "DTB kosong di device.conf"
 
 [ -n "$SRC" ] || { log "device.conf tidak punya DEVICE_DTS_SRC -> DTS dianggap sudah upstream, tidak ada yang disalin"; exit 0; }
 [ -f "$SRC" ] || die "DTS perangkat tidak ada: $SRC (REPO=$repo_root)"
@@ -65,9 +71,10 @@ fi
 # --- bukti, bukan klaim ------------------------------------------------------
 [ -f "$DST_DIR/$NAME" ] || die "DTS tidak mendarat di pohon kernel"
 grep -qxF "$ENTRY" "$MK" || die "entri Makefile tidak mendarat"
-log "  DTB yang akan dibangun: arch/$ARCH/boot/dts/$DTB"
-log "  (DTB= di device.conf: $DTB)"
-case "$DTB" in
-  *"$BASE"*) : ;;
-  *) warn "nama DTB di device.conf ($DTB) tidak memuat $BASE — cek konsistensinya" ;;
-esac
+log "  DTB yang akan dibangun: arch/$ARCH/boot/dts/${DTB:-<tidak diset di environment>}"
+if [ -n "${DTB:-}" ]; then
+  case "$DTB" in
+    *"$BASE"*) : ;;
+    *) warn "nama DTB di device.conf ($DTB) tidak memuat $BASE — cek konsistensinya" ;;
+  esac
+fi
