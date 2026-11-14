@@ -1,0 +1,14 @@
+# Tambahan opsi khusus tag kernel v6.13.6-r0.
+#
+# Kenapa ada: di tag ini `drivers/gpu/drm/panel/msm8916-generated/Kconfig` dan
+# `drivers/gpu/drm/panel/Kconfig` sama-sama mendefinisikan simbol
+# DRM_PANEL_SAMSUNG_S6E88A0_AMS427AP24 (satu-satunya nama yang bertumpuk; 46 simbol
+# generated vs 107 mainline). Keduanya jadi =m, keduanya menghasilkan .ko bernama sama,
+# lalu `make modules` mati di modules_check:
+#   error: the following would cause module name conflict:
+#     drivers/gpu/drm/panel/msm8916-generated/panel-samsung-s6e88a0-ams427ap24.ko
+#     drivers/gpu/drm/panel/panel-samsung-s6e88a0-ams427ap24.ko
+# Mematikannya mematikan KEDUA salinan (namanya sama). Tidak merugikan rolex: panel rolex
+# (Wingtech BOE HX8394-F / OTM ILI9881C / BOE NT35521s) HANYA ada di direktori generated,
+# jadi jalan generated tetap dibutuhkan dan tetap hidup.
+# CONFIG_DRM_PANEL_SAMSUNG_S6E88A0_AMS427AP24 is not set
