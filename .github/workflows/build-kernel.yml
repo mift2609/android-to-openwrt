@@ -116,6 +116,15 @@ jobs:
           # Dasar yang benar: config keluarga dari fork (msm8916_defconfig untuk msm89x7).
           make -C src ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" "${{ steps.dev.outputs.base_config }}"
           ./scripts/build/apply-config-fragment.sh --tree src --fragment "${{ steps.dev.outputs.fragment }}"
+          # Fragment tambahan KHUSUS tag: simbol yang hanya ada di kernel lebih baru (mis.
+          # CONFIG_NETFILTER_XTABLES_LEGACY baru ada di >6.13) ditaruh di devices/<dev>/fragments/<tag>.fragment
+          # supaya tag lama tidak gagal validasi. Opsional; dilewati kalau berkasnya tidak ada.
+          OVERLAY="devices/${{ inputs.device }}/fragments/${{ steps.dev.outputs.tag }}.fragment"
+          if [ -f "$OVERLAY" ]; then
+            echo "fragment khusus tag: $OVERLAY"
+            ./scripts/build/apply-config-fragment.sh --tree src --fragment "$OVERLAY"
+            echo "fragment tag: $OVERLAY" >> "$GITHUB_STEP_SUMMARY"
+          fi
           # Jangan hardcode simbol SoC di sini: perangkat lain (rolex = MSM_GCC_8917) tidak punya
           # MSM_GCC_8953, dan grep yang gagal = job CI gagal padahal build-nya sehat. Yang benar:
           # periksa SETIAP simbol =y yang diminta fragment perangkat ini benar-benar ada di .config.
