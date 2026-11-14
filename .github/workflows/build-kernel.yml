@@ -133,13 +133,14 @@ jobs:
           for s in $SYMS; do grep -qx "$s=y" src/.config || MISS="$MISS $s"; done
           if [ -n "$MISS" ]; then echo "simbol fragment TIDAK mendarat:$MISS" >&2; exit 1; fi
           echo "fragment mendarat: $(printf '%s\n' $SYMS | wc -l) simbol =y di .config" >> "$GITHUB_STEP_SUMMARY"
-          # LOCALVERSION (opsional): string ini yang muncul di `uname -r`.
-          if [ -n "${{ steps.dev.outputs.localversion }}" ]; then
-            src/scripts/config --file src/.config --set-str LOCALVERSION "${{ steps.dev.outputs.localversion }}"
-            grep -qx "CONFIG_LOCALVERSION=\"${{ steps.dev.outputs.localversion }}\"" src/.config \
-              || { echo "LOCALVERSION tidak mendarat di .config" >&2; exit 1; }
-            echo "localversion: $(grep '^CONFIG_LOCALVERSION=' src/.config)" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          # LOCALVERSION: SELALU ditulis, termasuk string kosong. Tanpa ini, defconfig fork
+          # meninggalkan suffix sendiri (mis. "-msm8916") sehingga `uname -r` tidak persis
+          # versi kernel walau device.conf menyetel LOCALVERSION="".
+          LV="${{ steps.dev.outputs.localversion }}"
+          src/scripts/config --file src/.config --set-str LOCALVERSION "$LV"
+          grep -qx "CONFIG_LOCALVERSION=\"$LV\"" src/.config \
+            || { echo "LOCALVERSION tidak mendarat di .config (LV='$LV')" >&2; exit 1; }
+          echo "localversion: $(grep '^CONFIG_LOCALVERSION=' src/.config)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build kernel + dtbs + modules
         env:
