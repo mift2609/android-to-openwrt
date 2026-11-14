@@ -1,0 +1,118 @@
+name: build-rootfs-2305
+
+# Rakit rootfs OpenWrt 23.05.5 (r24106-10cc5fcd00) untuk rolex dengan LuCI yang DIPIN ke
+# commit tertentu, supaya string versi LuCI di LuCI Status sama dengan build pembanding:
+#   "MagicBox_OpenWrt v1.1 r24106-10cc5fcd00 / LuCI openwrt-23.05 branch git-24.264.56413-c7a3562"
+#
+# Kenapa di CI: build paket LuCI dari source menarik dependensi kmod-* (kernel modules) yang
+# butuh puluhan menit di laptop. Runner GitHub menyelesaikannya jauh lebih cepat.
+#
+# Pakai:
+#   gh workflow run build-rootfs-2305.yml
+#   gh run download <run-id> -n rootfs-2305-rolex -D ~/rolex-openwrt/out-artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      luci_commit:
+        description: "Commit openwrt/luci (branch openwrt-23.05), kosong = pin default"
+        required: false
+        default: ""
+      packages:
+        description: "Paket image (ImageBuilder)"
+        required: false
+        default: "luci luci-ssl wpad-basic-mbedtls iwinfo block-mount usbutils"
+
+env:
+  OWRT_REL: "23.05.5"
+  TARGET: "armsr/armv8"
+  LUCI_PIN: "c7a35622197e83fafdc120ba73f16e8d653e1337"
+  LUCI_PKGS: >-
+    luci-theme-bootstrap luci-base luci-mod-admin-full luci-mod-network
+    luci-mod-status luci-mod-system luci-app-firewall luci-app-opkg
+    luci-proto-ipv6 luci-proto-ppp luci-light luci-ssl luci
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # 22.04: python3.10 masih punya distutils, yang diminta prereq-check OpenWrt 23.05
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependensi host
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bc bison flex libssl-dev libelf-dev \
+            device-tree-compiler rsync unzip gawk gettext python3-distutils zlib1g-dev \
+            libncurses5-dev subversion quilt ccache time xsltproc libxml-parser-perl \
+            mercurial rsync wget curl git
+
+      - name: Unduh SDK + ImageBuilder
+        run: |
+          set -e
+          base="https://downloads.openwrt.org/releases/${OWRT_REL}/targets/${TARGET}"
+          curl -fsSL -o sdk.tar.xz  "$base/openwrt-sdk-${OWRT_REL}-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          curl -fsSL -o ib.tar.xz   "$base/openwrt-imagebuilder-${OWRT_REL}-armsr-armv8.Linux-x86_64.tar.xz"
+          mkdir -p sdk ib
+          tar xf sdk.tar.xz -C sdk --strip-components=1
+          tar xf ib.tar.xz  -C ib  --strip-components=1
+          echo "sdk: $(du -sh sdk | cut -f1) ib: $(du -sh ib | cut -f1)"
+
+      - name: Siapkan feed LuCI yang dipin
+        working-directory: sdk
+        run: |
+          set -e
+          PIN="${{ inputs.luci_commit }}"
+          [ -n "$PIN" ] || PIN="$LUCI_PIN"
+          echo "luci pin: $PIN"
+          grep -v '^src-git luci ' feeds.conf.default > feeds.conf
+          echo "src-git luci https://git.openwrt.org/project/luci.git^$PIN" >> feeds.conf
+          ./scripts/feeds update -a >/dev/null
+          ./scripts/feeds install -a -p luci >/dev/null
+          make defconfig >/dev/null
+          git -C feeds/luci rev-parse HEAD
+
+      - name: Build paket LuCI (pin)
+        working-directory: sdk
+        run: |
+          set -e
+          for p in $LUCI_PKGS; do
+            [ -d "package/feeds/luci/$p" ] || { echo "tidak ada: $p"; continue; }
+            echo "== compile $p"
+            make -j"$(nproc)" "package/feeds/luci/$p/compile" >/tmp/build-$p.log 2>&1 || {
+              echo "GAGAL $p"; tail -40 /tmp/build-$p.log; exit 1; }
+          done
+          mkdir -p ../luci-pin
+          cp -f bin/packages/aarch64_generic/luci/*.ipk ../luci-pin/
+          cd ../luci-pin
+          ../sdk/scripts/ipkg-make-index.sh . > Packages
+          gzip -9 -c Packages > Packages.gz
+          echo "ipk: $(ls *.ipk | wc -l)"
+          ls luci-base_*.ipk
+
+      - name: Rakit image (LuCI dari repo lokal)
+        working-directory: ib
+        run: |
+          set -e
+          sed -i '/openwrt_luci/d' repositories.conf
+          echo "src luci_pin file://$PWD/../luci-pin" >> repositories.conf
+          FORCE=1 make image PROFILE=generic \
+            PACKAGES="${{ inputs.packages }}" >/tmp/ib.log 2>&1 || { tail -40 /tmp/ib.log; exit 1; }
+          ls -lh bin/targets/armsr/armv8/*.img.gz
+          # bukti: versi LuCI yang benar-benar masuk image
+          grep -E '^(luci|luci-base) ' bin/targets/armsr/armv8/*.manifest
+
+      - name: Unggah artefak
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-2305-rolex
+          retention-days: 14
+          path: |
+            ib/bin/targets/armsr/armv8/*-generic-ext4-rootfs.img.gz
+            ib/bin/targets/armsr/armv8/*.manifest
+            luci-pin/*.ipk
+            luci-pin/Packages.gz
