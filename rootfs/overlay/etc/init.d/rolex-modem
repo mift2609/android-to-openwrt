@@ -1,0 +1,89 @@
+#!/bin/sh /etc/rc.common
+# rolex-modem — angkat modem internal MSM8917 (mainline) supaya QMI+data siap.
+#
+# Urutan yang TERBUKTI jalan (kernel 7.1.3, DTB rolex + patch mpss_mem):
+#   1. modul: qcom_q6v5_mss (butuh qcom_q6v5), qcom_bam_dmux, rpmsg_wwan_ctrl
+#   2. simpan mba.mbn/modem.* ke /lib/firmware kalau belum ada
+#      (diambil dari partisi `modem` — FAT, isinya image/*.  Cara ini dipilih supaya rootfs
+#       tidak perlu memuat ~65 MB firmware.)
+#   3. rmtfs melayani EFS modem (modemst1/modemst2/fsg) — TANPA ini modem tidak mempublikasikan
+#      layanan QMI (terbukti: sebelum rmtfs jalan, QRTR hanya punya service 0x0f+0x33).
+#   4. `echo start` ke remoteproc MSS
+#   5. AT+CFUN=1 supaya RF modem hidup (default setelah boot = CFUN 0).
+#
+# Setelah ini: `qmicli -d qrtr://0 --dms-get-manufacturer` harus menjawab.
+START=95
+STOP=10
+USE_PROCD=1
+
+FW=/lib/firmware
+
+extract_firmware() {
+	[ -f "$FW/modem.mdt" ] && [ -f "$FW/mba.mbn" ] && return 0
+	mkdir -p "$FW" /mnt/rolex-modem
+	mount -t vfat -o ro /dev/disk/by-partlabel/modem /mnt/rolex-modem 2>/dev/null || {
+		logger -t rolex-modem "partisi modem tidak bisa di-mount; firmware modem dilewati"
+		return 1
+	}
+	cp -f /mnt/rolex-modem/image/modem.mdt /mnt/rolex-modem/image/modem.b* "$FW/" 2>/dev/null
+	cp -f /mnt/rolex-modem/image/mba.mbn "$FW/" 2>/dev/null
+	umount /mnt/rolex-modem
+	logger -t rolex-modem "firmware modem disalin dari partisi modem"
+}
+
+load_modules() {
+	# Dipakai insmod dengan path eksplisit, bukan modprobe: busybox modprobe di rootfs ini
+	# tidak selalu menemukan modul walaupun modules.dep ada (terbukti: modprobe rc=0 tapi
+	# /sys/class/remoteproc/remoteproc1 tidak muncul). qrtr_smd sudah built-in, tidak perlu.
+	for m in qcom_q6v5 qcom_q6v5_mss qcom_bam_dmux rpmsg_wwan_ctrl; do
+		ko=$(find "/lib/modules/$(uname -r)" -name "$m.ko" 2>/dev/null | head -1)
+		[ -n "$ko" ] && insmod "$ko" 2>/dev/null
+	done
+}
+
+mss_path() {
+	for n in /sys/class/remoteproc/remoteproc*/name; do
+		[ -f "$n" ] || continue
+		[ "$(cat "$n")" = "4080000.remoteproc" ] && { echo "${n%/name}"; return 0; }
+	done
+	return 1
+}
+
+start_service() {
+	extract_firmware
+	# rmtfs butuh nama partisi: sediakan /dev/disk/by-partlabel/* (OpenWrt tidak selalu bikin ini)
+	mkdir -p /dev/disk/by-partlabel
+	for d in /sys/class/block/mmcblk*p*; do
+		[ -f "$d/uevent" ] || continue
+		n=$(grep -o 'PARTNAME=[^[:space:]]*' "$d/uevent" | cut -d= -f2)
+		[ -n "$n" ] && ln -sf "../../$(basename "$d")" "/dev/disk/by-partlabel/$n"
+	done
+
+	load_modules
+	sleep 2
+
+	m=$(mss_path) || { logger -t rolex-modem "remoteproc MSS tidak ada di DT"; return 1; }
+	[ -x /usr/bin/rmtfs ] && {
+		pidof rmtfs >/dev/null || start-stop-daemon -S -b -x /usr/bin/rmtfs -- -P -o /dev/disk/by-partlabel >/dev/null 2>&1
+	}
+	sleep 1
+	[ "$(cat "$m/state")" = "running" ] || echo start > "$m/state"
+	sleep 10
+
+	# RF on (default CFUN 0 -> tidak ada registrasi jaringan)
+	if [ -x /usr/bin/qmicli ]; then
+		qmicli -d qrtr://0 --uim-get-card-status >/dev/null 2>&1 || sleep 5
+	fi
+	for p in /dev/wwan0at0 /dev/wwan0at1; do
+		[ -e "$p" ] || continue
+		( stty -F "$p" raw -echo 115200 2>/dev/null; printf 'AT+CFUN=1\r' > "$p" ) 2>/dev/null
+		break
+	done
+
+	logger -t rolex-modem "modem: $(cat "$m/state"), layanan QMI: $(qmicli -d qrtr://0 --dms-get-manufacturer 2>&1 | tail -1)"
+}
+
+stop_service() {
+	m=$(mss_path) && [ "$(cat "$m/state")" = "running" ] && echo stop > "$m/state"
+	pidof rmtfs >/dev/null && killall rmtfs
+}
