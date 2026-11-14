@@ -76,6 +76,16 @@ jobs:
           make defconfig >/dev/null
           git -C feeds/luci rev-parse HEAD
 
+      - name: Cache hasil build SDK (kunci = commit LuCI)
+        uses: actions/cache@v4
+        with:
+          path: |
+            sdk/build_dir
+            sdk/staging_dir
+            sdk/bin
+            sdk/dl
+          key: sdk23-${{ env.OWRT_REL }}-${{ inputs.luci_commit || env.LUCI_PIN }}
+
       - name: Build paket LuCI (pin)
         working-directory: sdk
         run: |
@@ -89,6 +99,8 @@ jobs:
           mkdir -p ../luci-pin
           cp -f bin/packages/aarch64_generic/luci/*.ipk ../luci-pin/
           cd ../luci-pin
+          # ipkg-make-index.sh memanggil perintah `sha256`; Ubuntu hanya punya `sha256sum`.
+          command -v sha256 >/dev/null || sudo ln -sf "$(command -v sha256sum)" /usr/local/bin/sha256
           ../sdk/scripts/ipkg-make-index.sh . > Packages
           gzip -9 -c Packages > Packages.gz
           echo "ipk: $(ls *.ipk | wc -l)"
