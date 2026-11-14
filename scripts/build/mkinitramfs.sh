@@ -53,6 +53,16 @@ fi
 cp -f "$(repo_root)/rootfs/initramfs/init" "$STAGE/init"
 chmod 755 "$STAGE/init"
 cp -f "$(repo_root)/rootfs/initramfs/udhcpc.script" "$STAGE/etc/udhcpc.script" 2>/dev/null || true
+# Busybox milik OpenWrt (+ musl) untuk JALUR DIAGNOSA: busybox Alpine tidak punya telnetd/nc/
+# httpd, sehingga satu-satunya kanal keluar saat boot macet adalah layar. Dengan binary ini
+# initramfs bisa menyalakan shell jarak jauh lewat gadget USB (httpd CGI + telnetd).
+if [ -f "$(repo_root)/rootfs/initramfs/bin/bb" ]; then
+  mkdir -p "$STAGE/lib"
+  cp -f "$(repo_root)/rootfs/initramfs/bin/bb" "$STAGE/bin/bb"
+  chmod 755 "$STAGE/bin/bb"
+  cp -f "$(repo_root)"/rootfs/initramfs/lib/*.so* "$STAGE/lib/" 2>/dev/null || true
+  log "busybox OpenWrt + musl ditambahkan ke initramfs ($(du -sh "$STAGE/lib" | cut -f1))"
+fi
 chmod 755 "$STAGE/etc/udhcpc.script" 2>/dev/null || true
 chmod 1777 "$STAGE/tmp"
 mkdir -p "$STAGE/lib/modules"
