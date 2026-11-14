@@ -209,3 +209,12 @@ CONFIG_MMC_SDHCI_PLTFM=y
 CONFIG_MMC_SDHCI_MSM=y
 CONFIG_REGULATOR_QCOM_SMD_RPM=y
 CONFIG_QCOM_CLK_SMD_RPM=y
+
+# --- Modem (MSM8917 / MDM9607-style MSS) -------------------------------------
+# DTS rolex sudah punya remoteproc@4080000 (qcom,mdm9607-mss-pil) + node bam-dmux,
+# tetapi build sebelumnya TIDAK menyalakan jalur data/kontrolnya, sehingga yang naik hanya
+# remoteproc WCNSS (WiFi). Tanpa BAM_DMUX tidak ada netdev wwan0; tanpa QMI_WWAN tidak ada
+# kanal kontrol QMI untuk registrasi data.
+CONFIG_BAM_DMUX=y
+CONFIG_QMI_WWAN=y
+CONFIG_QCOM_Q6V5_MSS=y
