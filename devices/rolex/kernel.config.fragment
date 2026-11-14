@@ -211,10 +211,11 @@ CONFIG_REGULATOR_QCOM_SMD_RPM=y
 CONFIG_QCOM_CLK_SMD_RPM=y
 
 # --- Modem (MSM8917 / MDM9607-style MSS) -------------------------------------
-# DTS rolex sudah punya remoteproc@4080000 (qcom,mdm9607-mss-pil) + node bam-dmux,
-# tetapi build sebelumnya TIDAK menyalakan jalur data/kontrolnya, sehingga yang naik hanya
-# remoteproc WCNSS (WiFi). Tanpa BAM_DMUX tidak ada netdev wwan0; tanpa QMI_WWAN tidak ada
-# kanal kontrol QMI untuk registrasi data.
-CONFIG_BAM_DMUX=y
-CONFIG_QMI_WWAN=y
-CONFIG_QCOM_Q6V5_MSS=y
+# Driver modem SUDAH aktif di defconfig keluarga (bukan perlu ditambah di sini):
+#   CONFIG_WWAN=y, CONFIG_QCOM_BAM_DMUX=m, CONFIG_RPMSG_WWAN_CTRL=m,
+#   CONFIG_QCOM_Q6V5_MSS=m, CONFIG_QRTR=y, CONFIG_QRTR_SMD=y
+# DTS rolex juga sudah punya remoteproc@4080000 ("qcom,mdm9607-mss-pil") + node bam-dmux.
+# Jadi modem TIDAK butuh opsi kernel tambahan — cukup modul dimuat + firmware modem ada di
+# /lib/firmware (modem.mdt/modem.b*, mba.mbn; ambil dari partisi `modem` perangkat).
+# (Nama simbol yang SALAH di kernel mainline: CONFIG_BAM_DMUX & CONFIG_QMI_WWAN — keduanya
+#  pernah saya coba dan build gagal; qmi_wwan itu driver USB, tidak dipakai di jalur SMD.)
