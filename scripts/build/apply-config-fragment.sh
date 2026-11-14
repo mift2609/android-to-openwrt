@@ -37,7 +37,7 @@ ok()  { printf '[ok] %s\n' "$*"; }
 die() { printf '[x] %s\n' "$*" >&2; exit 1; }
 
 tmp_symbols=$(mktemp); tmp_lines=$(mktemp)
-trap 'rm -f "$tmp_symbols" "$tmp_lines" "$tmp_symbols.bad"' EXIT
+trap 'rm -f "$tmp_symbols" "$tmp_lines" "$tmp_symbols.bad" "$tmp_symbols.neg"' EXIT
 
 # Ambil baris EFEKTIF dari fragment: `CONFIG_X=...` dan `# CONFIG_X is not set`.
 # Jangan pakai `grep -v '^#'` — filter itu membuang justru baris "is not set", yang
@@ -53,19 +53,31 @@ if [ -s "$tmp_symbols.bad" ]; then
 fi
 
 # --- 1. validasi nama simbol terhadap Kconfig --------------------------------
+# Dua kelas baris diperlakukan berbeda (pelajaran dari tag v6.13.6-r0):
+#  * `CONFIG_X=y|m|...`  = persyaratan. Simbol tidak ada di kernel ini -> GAGAL.
+#  * `# CONFIG_X is not set` = penolakan ("matikan opsi ini"). Kalau Kconfig kernel
+#    ini memang belum punya simbolnya (mis. CONFIG_ARCH_CIX / NETFILTER_XTABLES_LEGACY
+#    baru muncul di kernel > 6.13), baris itu tidak bisa dan tidak perlu diterapkan.
+#    Menggagalkan build untuk itu = fragment 7.x tidak bisa dipakai di tag 6.13 — jadi
+#    cukup PERINGATAN, dan jumlahnya dicetak supaya tidak diam-diam hilang.
 log "validasi $(wc -l < "$tmp_lines") opsi efektif di fragment terhadap Kconfig kernel"
+: > "$tmp_symbols.neg"
 while read -r line; do
   sym=$(printf '%s' "$line" | sed -n 's/^[[:space:]]*\(CONFIG_[A-Za-z0-9_]*\)=.*/\1/p')
-  [ -n "$sym" ] || sym=$(printf '%s' "$line" | sed -n 's/^[[:space:]]*# \(CONFIG_[A-Za-z0-9_]*\) is not set$/\1/p')
+  if [ -n "$sym" ]; then printf '%s\n' "$sym" >> "$tmp_symbols"; continue; fi
+  sym=$(printf '%s' "$line" | sed -n 's/^[[:space:]]*# \(CONFIG_[A-Za-z0-9_]*\) is not set$/\1/p')
   printf '%s\n' "$sym" >> "$tmp_symbols"
+  printf '%s\n' "$sym" >> "$tmp_symbols.neg"
 done < "$tmp_lines"
 
-missing=""
+missing=""; missing_neg=""
 while read -r sym; do
   # Kconfig mendefinisikan simbol TANPA awalan CONFIG_ ('config NETFILTER'), jadi buang dulu.
   bare=${sym#CONFIG_}
-  grep -rqsE "^[[:space:]]*(menu)?config ${bare}\$" "$TREE" --include=Kconfig --include='Kconfig.*' || missing="$missing $sym"
+  grep -rqsE "^[[:space:]]*(menu)?config ${bare}\$" "$TREE" --include=Kconfig --include='Kconfig.*' && continue
+  if grep -qx "$sym" "$tmp_symbols.neg"; then missing_neg="$missing_neg $sym"; else missing="$missing $sym"; fi
 done < "$tmp_symbols"
+[ -z "$missing_neg" ] || log "lewati $(printf '%s\n' $missing_neg | wc -l) baris 'is not set' yang simbolnya belum ada di kernel ini:$missing_neg"
 [ -z "$missing" ] || die "simbol tidak ada di kernel ini:$missing  (nama di fragment salah/basi)"
 
 ok "semua simbol valid"
