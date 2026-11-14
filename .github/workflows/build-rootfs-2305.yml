@@ -99,11 +99,11 @@ jobs:
           mkdir -p ../luci-pin
           cp -f bin/packages/aarch64_generic/luci/*.ipk ../luci-pin/
           cd ../luci-pin
-          # ipkg-make-index.sh memanggil perintah `sha256`; Ubuntu hanya punya `sha256sum`.
-          command -v sha256 >/dev/null || sudo ln -sf "$(command -v sha256sum)" /usr/local/bin/sha256
-          ../sdk/scripts/ipkg-make-index.sh . > Packages
+          # ipkg-make-index.sh bawaan gagal pada Description yang memuat '/' atau '|'
+          # ("sed: unknown option to `s'"); pakai generator python dari repo.
+          python3 ../scripts/tools/mk-ipk-index.py . > Packages
           gzip -9 -c Packages > Packages.gz
-          echo "ipk: $(ls *.ipk | wc -l)"
+          echo "ipk: $(ls *.ipk | wc -l) / index: $(grep -c '^Package:' Packages)"
           ls luci-base_*.ipk
 
       - name: Rakit image (LuCI dari repo lokal)
