@@ -52,6 +52,9 @@ jobs:
           echo "fragment=$KERNEL_CONFIG_FRAGMENT" >> "$GITHUB_OUTPUT"
           echo "base_config=${KERNEL_BASE_DEFCONFIG:-defconfig}" >> "$GITHUB_OUTPUT"
           echo "dts_src=${DEVICE_DTS_SRC:-}" >> "$GITHUB_OUTPUT"
+          # LOCALVERSION perangkat: membuat uname -r jadi <versi>-MagicBox tanpa mengubah
+          # kode kernel. Dipakai kalau ada pembanding (build lain) yang harus cocok string-nya.
+          echo "localversion=${KERNEL_LOCALVERSION:-}" >> "$GITHUB_OUTPUT"
           echo "device=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
           echo "### $DEVICE_NAME — kernel $TAG" >> "$GITHUB_STEP_SUMMARY"
 
@@ -121,6 +124,13 @@ jobs:
           for s in $SYMS; do grep -qx "$s=y" src/.config || MISS="$MISS $s"; done
           if [ -n "$MISS" ]; then echo "simbol fragment TIDAK mendarat:$MISS" >&2; exit 1; fi
           echo "fragment mendarat: $(printf '%s\n' $SYMS | wc -l) simbol =y di .config" >> "$GITHUB_STEP_SUMMARY"
+          # LOCALVERSION (opsional): string ini yang muncul di `uname -r`.
+          if [ -n "${{ steps.dev.outputs.localversion }}" ]; then
+            src/scripts/config --file src/.config --set-str LOCALVERSION "${{ steps.dev.outputs.localversion }}"
+            grep -qx "CONFIG_LOCALVERSION=\"${{ steps.dev.outputs.localversion }}\"" src/.config \
+              || { echo "LOCALVERSION tidak mendarat di .config" >&2; exit 1; }
+            echo "localversion: $(grep '^CONFIG_LOCALVERSION=' src/.config)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Build kernel + dtbs + modules
         env:
