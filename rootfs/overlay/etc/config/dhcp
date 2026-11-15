@@ -1,0 +1,49 @@
+
+config dnsmasq
+	option domainneeded '1'
+	option localise_queries '1'
+	option rebind_protection '1'
+	option rebind_localhost '1'
+	option local '/lan/'
+	option domain 'lan'
+	option expandhosts '1'
+	option cachesize '1000'
+	option authoritative '1'
+	option readethers '1'
+	option leasefile '/tmp/dhcp.leases'
+	option localservice '1'
+	option ednspacket_max '1232'
+	option localuse '1'
+	option noresolv '0'
+	option server '8.8.8.8' '8.8.4.4'
+	option resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
+	# AdGuard Home memegang :53 untuk klien (penyaring iklan); dnsmasq memindah
+	# DNS-nya ke 5353 di loopback dan tetap melayani DHCP + nama lokal .lan.
+	# AGH memakai 127.0.0.1:5353 sebagai upstream-nya.
+	option port '5353'
+
+# PENTING: nama interface HARUS 'usb' dan 'wifi' (lihat /etc/config/network).
+# Sebelumnya seksi DHCP menunjuk interface 'lan' yang TIDAK ADA -> dnsmasq tak
+# menghasilkan dhcp-range sama sekali (tidak dengar UDP/67) -> klien WiFi/LAN
+# tak pernah mendapat IP, walau asosiasi WiFi & sinyal bagus.
+config dhcp 'usb'
+	option interface 'usb'
+	option start '100'
+	option limit '150'
+	option leasetime '12h'
+	option dhcpv4 'server'
+	option force '1'
+
+config dhcp 'wifi'
+	option interface 'wifi'
+	option start '100'
+	option limit '150'
+	option leasetime '12h'
+	option dhcpv4 'server'
+	option force '1'
+
+config odhcpd 'odhcpd'
+	option maindhcp '0'
+	option leasefile '/tmp/hosts/odhcpd'
+	option leasetrigger '/usr/sbin/odhcpd-update'
+	option loglevel '4'
