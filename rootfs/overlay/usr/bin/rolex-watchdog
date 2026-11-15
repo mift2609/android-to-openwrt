@@ -26,6 +26,14 @@ iw dev wlan0 info 2>/dev/null | grep -q "type AP" || {
 	/etc/init.d/rolex-wifi start >/dev/null 2>&1
 }
 
+# NAT klien: kernel ini tanpa NFT_NAT -> fw4 gagal, jadi aturan iptables-legacy dijaga di sini
+if [ -x /etc/init.d/rolex-nat ]; then
+	/etc/init.d/rolex-nat status_quiet 2>/dev/null || {
+		say "aturan NAT klien hilang -> dipasang ulang"
+		/etc/init.d/rolex-nat start >/dev/null 2>&1
+	}
+fi
+
 # AdGuard Home (DNS penyaring iklan) — kalau mati, hidupkan lagi
 if [ -x /etc/init.d/adguardhome ]; then
 	/etc/init.d/adguardhome running >/dev/null 2>&1 || {

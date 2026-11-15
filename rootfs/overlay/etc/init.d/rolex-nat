@@ -1,0 +1,61 @@
+#!/bin/sh /etc/rc.common
+# rolex-nat — NAT (masquerade) untuk klien LAN/WiFi.
+#
+# Kenapa perlu skrip sendiri: kernel rolex saat ini TIDAK punya NAT nftables
+# (`type nat hook prerouting` ditolak -> fw4 gagal start, ruleset kosong), sehingga
+# klien tak bisa internet walau router sendiri bisa. Modul xtables legacy
+# (iptable_nat + NF_NAT_MASQUERADE) ADA, jadi NAT dipasang lewat iptables-legacy.
+#
+# Kalau nanti kernel sudah dibangun dengan NFT_NAT (lihat devices/rolex/kernel.config.fragment),
+# firewall4 bisa dipakai normal dan skrip ini tak lagi wajib — tapi tetap aman dijalankan
+# karena hanya menambah/menjaga satu aturan MASQUERADE.
+
+START=99
+STOP=10
+
+log() { logger -t rolex-nat "$*"; }
+
+ipt() {
+	for c in /usr/sbin/iptables /usr/sbin/iptables-legacy; do
+		[ -x "$c" ] && { echo "$c"; return 0; }
+	done
+	return 1
+}
+
+start() {
+	K=/lib/modules/$(uname -r)
+	for m in iptable_nat iptable_filter iptable_mangle; do
+		lsmod | grep -q "^$m " && continue
+		f=$(find "$K" -name "$m.ko" 2>/dev/null | head -1)
+		[ -n "$f" ] && insmod "$f" 2>/dev/null
+	done
+
+	# tunggu wwan0 (LTE) muncul — maks ~60 s
+	i=0
+	while [ $i -lt 12 ]; do
+		ip link show wwan0 >/dev/null 2>&1 && break
+		sleep 5
+		i=$((i + 1))
+	done
+	ip link show wwan0 >/dev/null 2>&1 || log "wwan0 belum ada — NAT dipasang tetap (berbasis nama interface)"
+
+	I=$(ipt) || { log "iptables tak tersedia — NAT dilewati"; return 1; }
+	echo 1 > /proc/sys/net/ipv4/ip_forward
+	$I -t nat -C POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null || $I -t nat -A POSTROUTING -o wwan0 -j MASQUERADE
+	for ifc in usb0 wlan0; do
+		$I -C FORWARD -i "$ifc" -o wwan0 -j ACCEPT 2>/dev/null || $I -A FORWARD -i "$ifc" -o wwan0 -j ACCEPT
+	done
+	log "NAT klien aktif: MASQUERADE wwan0 + FORWARD usb0/wlan0 -> wwan0"
+}
+
+stop() {
+	I=$(ipt) || return 0
+	$I -t nat -D POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null
+	log "NAT klien dimatikan"
+}
+
+# true kalau aturan inti sudah ada (dipakai rolex-watchdog)
+status_quiet() {
+	I=$(ipt) || return 1
+	$I -t nat -C POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null
+}

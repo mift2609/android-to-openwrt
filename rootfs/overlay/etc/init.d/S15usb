@@ -46,6 +46,19 @@ start_service() {
   [ -e "$GADGET_DIR/configs/c.1/rndis.usb0" ] || ln -sf "$GADGET_DIR/functions/rndis.usb0" "$GADGET_DIR/configs/c.1/"
   [ -e "$GADGET_DIR/configs/c.1/ecm.usb0" ]   || ln -sf "$GADGET_DIR/functions/ecm.usb0"   "$GADGET_DIR/configs/c.1/"
 
+  # Serial (CDC-ACM) lewat USB: PC yang menancap melihat /dev/ttyACM0, di sisi rolex
+  # jadi /dev/ttyGS0. Dipakai untuk menyalurkan port AT modem ke PC (lihat /etc/init.d/at-usb).
+  # Perlu CONFIG_USB_CONFIGFS_ACM=y — kalau kernel lama, mkdir gagal dan dilewati saja.
+  for m in usb_f_acm; do
+    [ -d "/sys/module/${m//-/_}" ] || modprobe "$m" 2>/dev/null || true
+  done
+  if mkdir -p "$GADGET_DIR/functions/acm.GS0" 2>/dev/null; then
+    [ -e "$GADGET_DIR/configs/c.1/acm.GS0" ] || ln -sf "$GADGET_DIR/functions/acm.GS0" "$GADGET_DIR/configs/c.1/"
+    logger -t S15usb "fungsi serial (acm.GS0) ditambahkan -> /dev/ttyGS0"
+  else
+    logger -t S15usb "acm.GS0 tak dibuat (kernel tanpa CONFIG_USB_CONFIGFS_ACM?)"
+  fi
+
   # UDC dari PHY probe asinkron: tunggu
   udc=""
   i=0; while [ $i -lt 30 ]; do udc=$(ls /sys/class/udc 2>/dev/null | head -1); [ -n "$udc" ] && break; sleep 0.5; i=$((i+1)); done
