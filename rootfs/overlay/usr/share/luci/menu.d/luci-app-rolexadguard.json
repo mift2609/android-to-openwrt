@@ -7,11 +7,9 @@
 			"path": "rolexmodem/adguard"
 		},
 		"depends": {
-			"acl": {
-				"luci-app-rolexadguard": [
-					"read"
-				]
-			}
+			"acl": [
+				"luci-app-rolexadguard"
+			]
 		}
 	}
 }
