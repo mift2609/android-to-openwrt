@@ -224,8 +224,8 @@ CONFIG_QCOM_CLK_SMD_RPM=y
 # Dulu hanya NFT_MASQ/NF_TABLES/NETFILTER_XTABLES yang ada, sehingga mode
 # tproxy/redirect tidak mungkin (tak ada TPROXY/NAT chain). Opsi di bawah
 # membuka: nft tproxy + socket match + nft NAT/REDIR + xtables REDIRECT/TPROXY/MARK.
-CONFIG_NF_TPROXY_IPV4=m
-CONFIG_NF_TPROXY_IPV6=m
+# NFT_TPROXY otomatis menyalakan NF_TPROXY_IPV4/IPV6 (select) — jangan ditulis sendiri,
+# dependensinya bisa gagal dan job build berhenti di langkah verifikasi.
 CONFIG_NFT_TPROXY=m
 CONFIG_NFT_SOCKET=m
 CONFIG_NFT_NAT=m
@@ -236,7 +236,6 @@ CONFIG_NETFILTER_XT_TARGET_REDIRECT=m
 CONFIG_NETFILTER_XT_TARGET_TPROXY=m
 CONFIG_NETFILTER_XT_TARGET_MARK=m
 CONFIG_NETFILTER_XT_MATCH_SOCKET=m
-CONFIG_NETFILTER_XT_MATCH_POLICY=m
 
 # --- AT modem sebagai tty (sms_tool/gcom/3ginfo-lite) ------------------------
 # Lihat devices/rolex/patches/0002+0003: channel AT (DATA4/DATA1) dilepas dari
