@@ -75,12 +75,26 @@ ssp_auto() {
 }
 
 rf_on() {
+	# Utamakan QMI (--dms-set-operating-mode=online). Sejak kernel baru, channel AT
+	# menjadi tty /dev/ttyRPMSG* dan TIDAK selalu menjawab "AT" (terbukti: modem
+	# 'shutting-down' -> registrasi 'not-registered-searching'), sedangkan QMI selalu ada.
+	if $Q -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1; then
+		i=0
+		while [ $i -lt 10 ]; do
+			case "$($Q -d qrtr://0 --dms-get-operating-mode 2>/dev/null | tr -d "'")" in
+				*"Mode: online"*) log "RF on (QMI: operating mode online)"; return 0 ;;
+			esac
+			sleep 2; i=$((i+1))
+		done
+		log "QMI: mode belum 'online' — coba jalur AT"
+	fi
+	# Cadangan jalur lama: AT+CFUN=1 lewat port AT (kalau alat/tty-nya menjawab)
 	i=0
-	while [ $i -lt 12 ]; do
-		at_expect "AT+CFUN=1" "OK" 8 && at_expect "AT+CFUN?" "+CFUN: 1" 8 && { log "RF on"; return 0; }
+	while [ $i -lt 6 ]; do
+		at_expect "AT+CFUN=1" "OK" 8 && at_expect "AT+CFUN?" "+CFUN: 1" 8 && { log "RF on (AT+CFUN=1)"; return 0; }
 		sleep 3; i=$((i+1))
 	done
-	log "peringatan: CFUN tidak bisa dipastikan 1"
+	log "peringatan: RF tidak bisa dipastikan menyala"
 	return 1
 }
 
