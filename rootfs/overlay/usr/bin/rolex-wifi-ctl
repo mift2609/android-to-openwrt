@@ -46,9 +46,19 @@ gen_conf() {
 		echo "hw_mode=g"
 		echo "channel=$CH"
 		echo "country_code=$CO"
+		echo "ieee80211d=1"
 		echo "ieee80211n=1"
+		# WMM wajib untuk HT; tanpa ini sebagian klien (iOS) menolak 802.11n
+		echo "wmm_enabled=1"
 		echo "ctrl_interface=/var/run/hostapd"
 		echo "auth_algs=1"
+		# Ramah klien iOS/Android: jangan memutus klien yang sedang hemat daya.
+		# Sebelumnya iPhone terlihat "deauthenticated due to inactivity" tiap ~50 s
+		# sehingga koneksinya terasa putus-putus walau asosiasi & sinyal bagus.
+		echo "skip_inactivity_poll=1"
+		echo "ap_max_inactivity=1800"
+		# jangan buang klien hanya karena ack lemah (khas saat klien tidur/berpindah)
+		echo "disassoc_low_ack=0"
 		[ "$HID" = 1 ] && echo "ignore_broadcast_ssid=1"
 		case "$ENC" in
 			psk2|psk|psk-mixed)
@@ -59,6 +69,12 @@ gen_conf() {
 				;;
 		esac
 	} > $CONF
+	# /var/run/hostapd dipakai ctrl_interface. Layanan hostapd bawaan OpenWrt berjalan
+	# sebagai user 'network' dan mengeluh "Permission denied" kalau dir ini milik root
+	# (lihat logread). Rapikan supaya tidak berisik dan hostapd_cli tetap bisa dipakai.
+	mkdir -p /var/run/hostapd
+	chown network:network /var/run/hostapd 2>/dev/null
+	chmod 750 /var/run/hostapd 2>/dev/null
 	say "conf ditulis: ssid=$SSID channel=$CH enc=${ENC:-none} key=$([ -n "$KEY" ] && echo 'ada' || echo '-')"
 }
 
