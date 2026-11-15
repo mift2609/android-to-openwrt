@@ -1,0 +1,25 @@
+From: rolex bring-up <rolex@local>
+Subject: [PATCH 2/3] wwan: rpmsg_wwan_ctrl: jangan ambil channel AT Qualcomm
+
+Port WWAN adalah char device tanpa termios -> alat berbasis tty (sms_tool, gcom,
+3ginfo-lite) gagal "tcsetattr: Bad file descriptor". Channel AT "DATA4"/"DATA1"
+diserahkan ke rpmsg_tty (patch berikutnya) -> /dev/ttyRPMSGx.
+Channel QMI ("DATA5_CNTL") tetap ditangani driver ini.
+
+--- a/drivers/net/wwan/rpmsg_wwan_ctrl.c
++++ b/drivers/net/wwan/rpmsg_wwan_ctrl.c
+@@ -148,8 +148,12 @@
+ static const struct rpmsg_device_id rpmsg_wwan_ctrl_id_table[] = {
+ 	/* RPMSG channels for Qualcomm SoCs with integrated modem */
+ 	{ .name = "DATA5_CNTL", .driver_data = WWAN_PORT_QMI },
+-	{ .name = "DATA4", .driver_data = WWAN_PORT_AT },
+-	{ .name = "DATA1", .driver_data = WWAN_PORT_AT },
++	/*
++	 * Channel AT ("DATA4"/"DATA1") sengaja tidak diambil di sini: port WWAN
++	 * adalah char device tanpa termios, sehingga alat berbasis tty
++	 * (sms_tool, gcom, 3ginfo-lite) gagal "Bad file descriptor".
++	 * Channel AT ditangani rpmsg_tty -> /dev/ttyRPMSGx.
++	 */
+ 	{},
+ };
+ MODULE_DEVICE_TABLE(rpmsg, rpmsg_wwan_ctrl_id_table);

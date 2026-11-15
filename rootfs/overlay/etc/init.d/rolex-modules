@@ -1,0 +1,31 @@
+#!/bin/sh /etc/rc.common
+# rolex-modules — muat SEMUA modul platform rolex lebih awal (S9).
+#
+# Alasan dibuat: modul modem (qcom_q6v5_mss) butuh simbol dari qcom_common yang dulu
+# kebetulan dimuat oleh rolex-wifi (S94). Begitu rolex-wifi dimatikan/diubah, modem gagal:
+#   "qcom_q6v5_mss: Unknown symbol qcom_add_smd_subdev" -> /sys/class/remoteproc/remoteproc1
+#   tidak pernah muncul -> rolex-modem menyerah ("modul MSS gagal dimuat") -> LTE mati.
+# Karena itu pemuatan modul dipisah ke sini, sebelum network(20)/modemmanager(61)/modem(95).
+#
+# PELAJARAN: pakai insmod + `find` (bukan modprobe — di image ini modprobe gagal rc=255
+# tanpa pesan karena kmodloader tak memakai modules.dep hasil depmod kita).
+# Urutan WAJIB: qcom_common & qcom_pil_info sebelum qcom_q6v5_mss; wcnss_ctrl sebelum
+# qcom_wcnss_pil (kalau tidak: watchdog timeout). Mac80211/cfg80211 sebelum wcn36xx.
+START=09
+
+# rpmsg_tty: menjadikan channel AT modem (DATA4/DATA1) sebagai tty /dev/ttyRPMSG* —
+# perlu untuk sms_tool/gcom/3ginfo-lite (mereka butuh termios). Lihat patch 0003.
+MODS="libarc4 cfg80211 mac80211 mdt_loader qcom_common qcom_pil_info qcom_q6v5 qcom_q6v5_pas qcom_q6v5_mss qcom_bam_dmux rpmsg_wwan_ctrl rpmsg_tty wcnss_ctrl qcom_wcnss_pil wcn36xx"
+
+log() { logger -t rolex-modules "$*"; }
+
+start() {
+	K=/lib/modules/$(uname -r)
+	for m in $MODS; do
+		lsmod | grep -q "^$m " && continue
+		ko=$(find "$K" -name "$m.ko" 2>/dev/null | head -1)
+		[ -n "$ko" ] || { log "modul $m tidak ditemukan"; continue; }
+		insmod "$ko" 2>&1 | while read l; do log "insmod $m: $l"; done
+	done
+	log "terpasang: $(lsmod | awk '{print $1}' | grep -E 'qcom|q6v5|wcn|cfg80211|mac80211|bam' | tr '\n' ' ')"
+}

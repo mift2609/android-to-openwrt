@@ -1,0 +1,113 @@
+#!/bin/sh
+# rolex-wifi-ctl — kontrol AP WiFi rolex (dipakai halaman LuCI "WiFi").
+#
+#   status                     cetak SSID, sandi, channel, jumlah klien (key=value)
+#   ssid <nama>                set SSID
+#   key <sandi>                set sandi (encryption otomatis psk2; kosong = terbuka)
+#   channel <1-13>             set channel 2.4 GHz
+#   hidden <0|1>               sembunyikan SSID
+#   apply                      tulis ulang /etc/hostapd-rolex.conf + restart AP
+#   clients                    daftar klien yang terhubung
+#
+# Sumber kebenaran: /etc/config/wireless (radio0 + wifi-iface pertama), jadi halaman
+# LuCI mana pun yang mengedit bagian itu ikut terpakai.
+IFACE_DEV=wlan0
+CONF=/etc/hostapd-rolex.conf
+LOG=/var/log/rolex-wifi-ctl.log
+say() { echo "$*"; echo "$(date '+%F %T') $*" >> $LOG; }
+
+_sec() { # cari nama section wifi-iface; buat kalau belum ada
+	s=$(uci -q show wireless | sed -n "s/^\(wireless\.[^.]*\)=wifi-iface$/\1/p" | head -1)
+	if [ -z "$s" ]; then
+		uci add wireless wifi-iface >/dev/null
+		s=$(uci -q show wireless | sed -n "s/^\(wireless\.[^.]*\)=wifi-iface$/\1/p" | tail -1)
+		uci set "$s.device=radio0"
+		uci set "$s.mode=ap"
+		uci set "$s.network=wifi"
+		uci set "$s.ssid=rolex-hotspot"
+		uci set "$s.encryption=none"
+		uci commit wireless
+	fi
+	echo "$s"
+}
+
+gen_conf() {
+	IF=$(_sec); [ -n "$IF" ] || IF=wireless.default_radio0
+	SSID=$(uci -q get "$IF.ssid"); [ -n "$SSID" ] || SSID=rolex-hotspot
+	CH=$(uci -q get wireless.radio0.channel); [ -n "$CH" ] || CH=6
+	CO=$(uci -q get wireless.radio0.country); [ -n "$CO" ] || CO=ID
+	ENC=$(uci -q get "$IF.encryption")
+	KEY=$(uci -q get "$IF.key")
+	HID=$(uci -q get "$IF.hidden")
+	{
+		echo "driver=nl80211"
+		echo "interface=$IFACE_DEV"
+		echo "ssid=$SSID"
+		echo "hw_mode=g"
+		echo "channel=$CH"
+		echo "country_code=$CO"
+		echo "ieee80211n=1"
+		echo "ctrl_interface=/var/run/hostapd"
+		echo "auth_algs=1"
+		[ "$HID" = 1 ] && echo "ignore_broadcast_ssid=1"
+		case "$ENC" in
+			psk2|psk|psk-mixed)
+				echo "wpa=2"
+				echo "wpa_key_mgmt=WPA-PSK"
+				echo "rsn_pairwise=CCMP"
+				echo "wpa_passphrase=$KEY"
+				;;
+		esac
+	} > $CONF
+	say "conf ditulis: ssid=$SSID channel=$CH enc=${ENC:-none} key=$([ -n "$KEY" ] && echo 'ada' || echo '-')"
+}
+
+case "$1" in
+status)
+	IF=$(_sec)
+	echo "ssid=$(uci -q get ${IF}.ssid)"
+	echo "encryption=$(uci -q get ${IF}.encryption)"
+	echo "key=$([ -n "$(uci -q get ${IF}.key)" ] && echo 'tersimpan' || echo '-')"
+	echo "channel=$(uci -q get wireless.radio0.channel)"
+	echo "hidden=$(uci -q get ${IF}.hidden)"
+	echo "ap_state=$(iw dev 2>/dev/null | grep -q 'type AP' && echo jalan || echo mati)"
+	echo "ip=$(ip -4 -o addr show $IFACE_DEV 2>/dev/null | awk '{print $4}' | head -1)"
+	echo "clients=$(iw dev $IFACE_DEV station dump 2>/dev/null | grep -c Station)"
+	;;
+ssid) [ -n "$2" ] || { say "pakai: ssid <nama>"; exit 1; }; uci set "$(_sec).ssid=$2"; uci commit wireless; say "SSID: $2 — jalankan apply"; ;;
+key)
+	if [ -n "$2" ]; then uci set "$(_sec).encryption=psk2"; uci set "$(_sec).key=$2"; else uci set "$(_sec).encryption=none"; uci delete "$(_sec).key" 2>/dev/null; fi
+	uci commit wireless; say "sandi diperbarui — jalankan apply"
+	;;
+channel) case "$2" in [1-9]|1[0-3]) uci set wireless.radio0.channel="$2"; uci commit wireless; say "channel: $2 — jalankan apply";; *) say "channel harus 1-13"; exit 1;; esac ;;
+hidden) uci set "$(_sec).hidden=$2"; uci commit wireless; say "hidden: $2" ;;
+sync)
+	# Dipakai watchdog: kalau isi konfigurasi uci sudah berbeda dari /etc/hostapd-rolex.conf
+	# (mis. habis diubah dari LuCI/Network->Wireless), tulis ulang & restart AP.
+	tmp=/tmp/hostapd-rolex.conf.new
+	cp -f $CONF $tmp 2>/dev/null
+	gen_conf >/dev/null 2>&1
+	if ! cmp -s $tmp $CONF; then
+		say "konfigurasi uci berubah -> terapkan ke AP"
+		/usr/bin/rolex-wifi-ctl apply >/dev/null 2>&1
+	else
+		rm -f $tmp
+	fi
+	;;
+clients) iw dev $IFACE_DEV station dump 2>/dev/null | grep -E "Station|signal:" | sed 's/^[[:space:]]*//' ;;
+apply)
+	killall hostapd 2>/dev/null
+	sleep 1
+	gen_conf
+	# WAJIB background: kalau tidak, pemanggil (LuCI/watchdog/ssh) menggantung selamanya.
+	start-stop-daemon -S -b -x /usr/sbin/hostapd -- $CONF > /tmp/hapd.log 2>&1 || \
+		/usr/sbin/hostapd $CONF > /tmp/hapd.log 2>&1 &
+	sleep 4
+	say "AP: $(iw dev 2>/dev/null | grep -E 'ssid|type|channel' | tr '\n' ' ')"
+	[ -s /tmp/hapd.log ] && say "log hostapd: $(tail -2 /tmp/hapd.log | tr '\n' '|')"
+	;;
+*) cat <<EOF
+pakai: $0 status|ssid <nama>|key <sandi>|channel <1-13>|hidden <0|1>|apply|clients
+EOF
+	exit 1 ;;
+esac

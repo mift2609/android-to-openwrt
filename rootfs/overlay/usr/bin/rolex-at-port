@@ -1,0 +1,42 @@
+#!/bin/sh
+# Cetak port AT modem yang benar-benar menjawab, untuk skrip rolex.
+#
+# Dua kemungkinan bentuk port AT:
+#   * kernel lama: /dev/wwan0at0 | at1  (char device WWAN, tanpa termios)
+#   * kernel baru: /dev/ttyRPMSG0 | 1   (tty dari rpmsg_tty, punya termios — dipakai
+#                                        sms_tool/gcom/3ginfo-lite)
+# Karena itu jangan pernah mematok satu nama: uji dengan "AT" lalu pakai yang menjawab.
+# Hasil disimpan di /tmp/rolex-at-port supaya tidak diuji ulang terus.
+
+CACHE=/tmp/rolex-at-port
+
+[ -s "$CACHE" ] && { cat "$CACHE"; exit 0; }
+
+uji() {
+	p=$1
+	[ -c "$p" ] || [ -e "$p" ] || return 1
+	exec 3<>"$p" 2>/dev/null || return 1
+	printf 'AT\r' >&3 2>/dev/null
+	n=0
+	while [ $n -lt 8 ]; do
+		if read -t 1 line <&3; then
+			case "$line" in
+				*OK*|*AT*) exec 3<&- 3>&-; echo "$p"; return 0 ;;
+			esac
+		fi
+		n=$((n + 1))
+	done
+	exec 3<&- 3>&-
+	return 1
+}
+
+for p in /dev/ttyRPMSG0 /dev/ttyRPMSG1 /dev/ttyAT0 /dev/wwan0at0 /dev/wwan0at1; do
+	if o=$(uji "$p"); then
+		printf '%s' "$o" > "$CACHE"
+		echo "$o"
+		exit 0
+	fi
+done
+
+echo "port AT tidak menjawab" >&2
+exit 1

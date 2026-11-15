@@ -1,0 +1,19 @@
+From: rolex bring-up <rolex@local>
+Subject: [PATCH 3/3] tty: rpmsg_tty: klaim channel AT Qualcomm (DATA4/DATA1)
+
+Modem MSM8917/MDM9607 mengumumkan channel AT sebagai "DATA4"/"DATA1". Dengan
+menambahkannya di tabel id rpmsg_tty, channel itu menjadi tty (/dev/ttyRPMSGx)
+yang bisa dipakai sms_tool, gcom, dan 3ginfo-lite.
+
+--- a/drivers/tty/rpmsg_tty.c
++++ b/drivers/tty/rpmsg_tty.c
+@@ -216,6 +216,9 @@
+ 
+ static struct rpmsg_device_id rpmsg_driver_tty_id_table[] = {
+ 	{ .name	= "rpmsg-tty" },
++	/* Channel AT modem Qualcomm (MSM8917/MDM9607) -> /dev/ttyRPMSGx */
++	{ .name	= "DATA4" },
++	{ .name	= "DATA1" },
+ 	{ },
+ };
+ MODULE_DEVICE_TABLE(rpmsg, rpmsg_driver_tty_id_table);

@@ -219,3 +219,33 @@ CONFIG_QCOM_CLK_SMD_RPM=y
 # /lib/firmware (modem.mdt/modem.b*, mba.mbn; ambil dari partisi `modem` perangkat).
 # (Nama simbol yang SALAH di kernel mainline: CONFIG_BAM_DMUX & CONFIG_QMI_WWAN — keduanya
 #  pernah saya coba dan build gagal; qmi_wwan itu driver USB, tidak dipakai di jalur SMD.)
+
+# --- Proxy transparan (mihomo/Nikki/OpenClash) -------------------------------
+# Dulu hanya NFT_MASQ/NF_TABLES/NETFILTER_XTABLES yang ada, sehingga mode
+# tproxy/redirect tidak mungkin (tak ada TPROXY/NAT chain). Opsi di bawah
+# membuka: nft tproxy + socket match + nft NAT/REDIR + xtables REDIRECT/TPROXY/MARK.
+CONFIG_NF_TPROXY_IPV4=m
+CONFIG_NF_TPROXY_IPV6=m
+CONFIG_NFT_TPROXY=m
+CONFIG_NFT_SOCKET=m
+CONFIG_NFT_NAT=m
+CONFIG_NFT_REDIR=m
+CONFIG_NFT_COMPAT=m
+CONFIG_IP_NF_TARGET_REDIRECT=m
+CONFIG_NETFILTER_XT_TARGET_REDIRECT=m
+CONFIG_NETFILTER_XT_TARGET_TPROXY=m
+CONFIG_NETFILTER_XT_TARGET_MARK=m
+CONFIG_NETFILTER_XT_MATCH_SOCKET=m
+CONFIG_NETFILTER_XT_MATCH_POLICY=m
+
+# --- AT modem sebagai tty (sms_tool/gcom/3ginfo-lite) ------------------------
+# Lihat devices/rolex/patches/0002+0003: channel AT (DATA4/DATA1) dilepas dari
+# rpmsg_wwan_ctrl lalu diklaim rpmsg_tty supaya muncul /dev/ttyRPMSGx (punya termios).
+CONFIG_RPMSG_TTY=m
+
+# --- USB serial: dongle modem + adapter serial -------------------------------
+CONFIG_USB_SERIAL=m
+CONFIG_USB_SERIAL_OPTION=m
+CONFIG_USB_ACM=m
+CONFIG_USB_NET_QMI_WWAN=m
+CONFIG_USB_NET_CDC_MBIM=m

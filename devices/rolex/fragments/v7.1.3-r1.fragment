@@ -9,3 +9,13 @@ CONFIG_NETFILTER_XTABLES_LEGACY=y
 # CONFIG_ARCH_BLAIZE is not set
 # CONFIG_ARCH_BST is not set
 # CONFIG_ARCH_CIX is not set
+
+# --- Opsi bertipe bool (tak bisa =m) — hanya untuk tag ini -------------------
+# iptables-nft (32bit compat) -> proxy transparan mode redirect
+CONFIG_NETFILTER_XTABLES_COMPAT=y
+# dukungan serial generik (dongle USB)
+CONFIG_USB_SERIAL_GENERIC=y
+# tty CDC-ACM lewat USB gadget -> AT bisa diakses dari PC
+CONFIG_USB_CONFIGFS_ACM=y
+# serial bulk in/out lewat USB gadget
+CONFIG_USB_CONFIGFS_SERIAL=y

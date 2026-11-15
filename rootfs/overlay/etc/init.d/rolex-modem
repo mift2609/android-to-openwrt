@@ -98,11 +98,9 @@ start_service() {
 	if [ -x /usr/bin/qmicli ]; then
 		qmicli -d qrtr://0 --uim-get-card-status >/dev/null 2>&1 || sleep 5
 	fi
-	for p in /dev/wwan0at0 /dev/wwan0at1; do
-		[ -e "$p" ] || continue
-		( stty -F "$p" raw -echo 115200 2>/dev/null; printf 'AT+CFUN=1\r' > "$p" ) 2>/dev/null
-		break
-	done
+	# port AT: kernel baru = tty /dev/ttyRPMSG*, kernel lama = /dev/wwan0at*
+	ATP=$(/usr/bin/rolex-at-port 2>/dev/null)
+	[ -n "$ATP" ] && ( stty -F "$ATP" raw -echo 115200 2>/dev/null; printf 'AT+CFUN=1\r' > "$ATP" ) 2>/dev/null
 
 	logger -t rolex-modem "modem: $(cat "$m/state"), layanan QMI: $(qmicli -d qrtr://0 --dms-get-manufacturer 2>&1 | tail -1)"
 }

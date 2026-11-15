@@ -13,10 +13,19 @@
 #    ulang lewat AT+CFUN? sampai bernilai 1.
 Q=/usr/bin/qmicli
 T=/usr/bin/rolex-qmi
-AT=/dev/wwan0at0
+# port AT: kernel baru = tty /dev/ttyRPMSG*; kernel lama = /dev/wwan0at0.
+# Jangan dipatok — pakai deteksi (lihat /usr/bin/rolex-at-port).
+at_port() { /usr/bin/rolex-at-port 2>/dev/null || echo /dev/wwan0at0; }
 MSS=/sys/class/remoteproc/remoteproc1/state
 LOG=/var/log/rolex-lte.log
 APN=${APN:-internet}
+# APN/IP family/profile bisa diatur dari LuCI (menu Modem → Modem LTE) lewat
+# uci /etc/config/rolexlte. Nilai env tetap menang supaya debug manual tetap bisa.
+_uci() { uci -q get "rolexlte.main.$1" 2>/dev/null; }
+[ -z "${APN_SET:-}" ] && { _a=$(_uci apn); [ -n "$_a" ] && APN=$_a; }
+IPFAM=$(_uci ipfam); [ -n "$IPFAM" ] || IPFAM=ipv4
+PROFILE=$(_uci profile)
+export IPFAM PROFILE
 
 log() { echo "$(date '+%H:%M:%S') $*" >> $LOG; }
 
@@ -85,10 +94,24 @@ wait_register() {
 	return 1
 }
 
+modem_via_init() {
+	# Bring-up penuh lewat skrip init: modul + salin firmware dari partisi modem + rmtfs + MSS.
+	# Perlu karena toggle remoteproc saja TIDAK cukup kalau MSS belum pernah dinyalakan
+	# (gejala: "4080000.remoteproc offline" setelah boot -> LTE tak pernah naik).
+	log "MSS belum jalan -> rolex-modules + rolex-modem"
+	/etc/init.d/rolex-modules start >/dev/null 2>&1
+	/etc/init.d/rolex-modem start >/dev/null 2>&1
+	sleep 5
+}
+
 modem_restart() {
-	log "restart remoteproc MSS"
-	echo stop > $MSS 2>/dev/null; sleep 3
-	echo start > $MSS 2>/dev/null
+	if [ ! -e "$MSS" ] || [ "$(cat $MSS 2>/dev/null)" != "running" ]; then
+		modem_via_init
+	else
+		log "restart remoteproc MSS"
+		echo stop > $MSS 2>/dev/null; sleep 3
+		echo start > $MSS 2>/dev/null
+	fi
 	qmi_wait
 	uim_session
 	sleep 3
@@ -107,10 +130,21 @@ apply_ip() {
 		255.255.255.248) PFX=29;; 255.255.255.252) PFX=30;; 255.255.255.0) PFX=24;;
 		*) PFX=30;;
 	esac
+	# Operator kadang memberi alamat yang justru NETWORK ADDRESS untuk prefix itu
+	# (mis. 10.147.178.64/30 -> semua host bit nol). Paket lalu tak bisa dikirim karena
+	# sumber paket tak sah. Naikkan prefix sampai alamat itu jadi host address yang sah.
+	LAST=${IP##*.}
+	BLK=$(( 1 << (32 - PFX) ))
+	if [ $(( LAST % BLK )) -eq 0 ] && [ $PFX -lt 31 ]; then
+		PFX=$(( PFX + 1 ))
+		log "IP $IP adalah network address untuk /$((PFX-1)) -> pakai /$PFX"
+	fi
 	ip link set wwan0 up
 	ip addr flush dev wwan0 2>/dev/null
 	ip addr add "$IP/$PFX" dev wwan0
-	ip route replace default via "$GW" dev wwan0
+	# onlink: gateway operator kadang di luar mask yang dilaporkan modem (mis. IP .63/30,
+	# gw .64) -> tanpa onlink, "ip route add default" ditolak "Network unreachable".
+	ip route replace default via "$GW" dev wwan0 onlink
 	{ [ -n "$D1" ] && echo "nameserver $D1"; [ -n "$D2" ] && echo "nameserver $D2"; } > /etc/resolv.conf
 	log "wwan0 $IP/$PFX gw $GW dns $D1,$D2"
 }

@@ -1,0 +1,103 @@
+#!/bin/sh
+# Sumber data untuk halaman LuCI "4G Connection" (luci-app-3ginfo-lite).
+# Aslinya 3ginfo.sh membaca modem lewat gcom/AT; modem rolex tak punya tty AT
+# (port WWAN char device -> tcsetattr gagal), jadi nilainya diambil dari qmicli (QMI/QRTR).
+# Dipanggil oleh /usr/share/3ginfo-lite/3ginfo.sh (pembungkus, lihat berkas itu).
+# Statistik koneksi (conn_time/rx/tx) datang dari skrip asli via variabel lingkungan.
+
+Q="qmicli -d qrtr://0"
+j() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+num() { printf '%s' "$1" | grep -oE '\-?[0-9]+(\.[0-9]+)?' | head -1; }
+
+sig=$($Q --nas-get-signal-info 2>/dev/null | tr -d "'")
+rssi=$(num "$(echo "$sig" | sed -n 's/.*RSSI:[[:space:]]*\(.*\)/\1/p' | head -1)")
+rsrp=$(num "$(echo "$sig" | sed -n 's/.*RSRP:[[:space:]]*\(.*\)/\1/p' | head -1)")
+rsrq=$(num "$(echo "$sig" | sed -n 's/.*RSRQ:[[:space:]]*\(.*\)/\1/p' | head -1)")
+sinr=$(num "$(echo "$sig" | sed -n 's/.*SNR:[[:space:]]*\(.*\)/\1/p' | head -1)")
+
+serv=$($Q --nas-get-serving-system 2>/dev/null | tr -d "'")
+reg=$(echo "$serv" | sed -n 's/^[[:space:]]*Registration state:[[:space:]]*\(.*\)$/\1/p' | head -1)
+rat=$(echo "$serv" | sed -n 's/^[[:space:]]*\[0\]: \(.*\)$/\1/p' | head -1)
+opname=$(echo "$serv" | sed -n 's/^[[:space:]]*Description: \(.*\)$/\1/p' | head -1)
+mcc=$(echo "$serv" | sed -n 's/^[[:space:]]*MCC: \(.*\)$/\1/p' | head -1)
+mnc=$(echo "$serv" | sed -n 's/^[[:space:]]*MNC: \(.*\)$/\1/p' | head -1)
+cid=$(num "$(echo "$serv" | sed -n 's/^[[:space:]]*3GPP cell ID: \(.*\)$/\1/p' | head -1)")
+tac=$(num "$(echo "$serv" | sed -n 's/^[[:space:]]*LTE tracking area code: \(.*\)$/\1/p' | head -1)")
+lac=$(num "$(echo "$serv" | sed -n 's/^[[:space:]]*3GPP location area code: \(.*\)$/\1/p' | head -1)")
+
+rf=$($Q --nas-get-rf-band-info 2>/dev/null | tr -d "'")
+band=$(echo "$rf" | sed -n 's/^[[:space:]]*Active Band Class:[[:space:]]*\(.*\)$/\1/p' | head -1)
+earfcn=$(num "$(echo "$rf" | sed -n 's/^[[:space:]]*Active Channel:[[:space:]]*\(.*\)$/\1/p' | head -1)")
+pci=$(num "$($Q --nas-get-cell-location-info 2>/dev/null | tr -d "'" | sed -n 's/^[[:space:]]*Physical Cell ID: \(.*\)$/\1/p' | head -1)")
+
+modem_rev=$($Q --dms-get-revision 2>/dev/null | sed -n "s/.*Revision: '\(.*\)'.*/\1/p" | head -1)
+mm=$(mmcli -m any 2>/dev/null)
+mmi=$(mmcli -i any 2>/dev/null)
+imei=$(printf '%s\n' "$mm" | sed -n 's/.*equipment id:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+imsi=$(printf '%s\n' "$mmi" | sed -n 's/.*imsi:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+iccid=$(printf '%s\n' "$mmi" | sed -n 's/.*iccid:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+[ -n "$imei" ] || imei=$($Q --dms-get-ids 2>/dev/null | sed -n 's/.*IMEI: .\([0-9]*\)..*/\1/p' | head -1)
+
+# eutran-3 -> "B3 (1800 MHz)" supaya halaman menampilkan band yang mudah dibaca
+bandlabel() {
+	n=$(printf '%s' "$1" | sed -n 's/^eutran-\([0-9]*\)$/\1/p')
+	[ -z "$n" ] && { printf '%s' "${1:--}"; return; }
+	f=''
+	case "$n" in
+		1) f='2100 MHz';; 2) f='1900 MHz';; 3) f='1800 MHz';; 4) f='1700 MHz';;
+		5) f='850 MHz';;  7) f='2600 MHz';; 8) f='900 MHz';;  20) f='800 MHz';;
+		28) f='700 MHz';; 38) f='2600 MHz';; 40) f='2300 MHz';; 41) f='2500 MHz';;
+		*) f='' ;;
+	esac
+	[ -n "$f" ] && printf 'B%s (%s)' "$n" "$f" || printf 'B%s' "$n"
+}
+
+# persen sinyal ditaksir dari RSRP (khas 3ginfo: >80 bagus sekali)
+sigpct=$(awk -v r="${rsrp:-0}" 'BEGIN{ p=(r+120)/44*100; if(p<0)p=0; if(p>100)p=100; printf "%d", p }')
+# CSQ ditaksir dari RSSI (CSQ = (RSSI+113)/2, 0..31)
+csq=$(awk -v r="${rssi:-0}" 'BEGIN{ c=(r+113)/2; if(c<0)c=0; if(c>31)c=31; printf "%d", c }')
+hexof() { [ -n "$1" ] && printf "0x%X" "$1" || echo "-"; }
+
+echo "{"
+echo "\"error\":\"\","
+echo "\"signal\":\"$sigpct\","
+echo "\"operator_name\":\"$(j "${opname:--}")\","
+echo "\"operator_mcc\":\"${mcc:--}\","
+echo "\"operator_mnc\":\"${mnc:--}\","
+echo "\"registration\":\"$(j "${reg:--}")\","
+echo "\"mode\":\"$(echo "${rat:-lte}" | tr 'a-z' 'A-Z')\","
+echo "\"location\":\"$(j "${opname:--}")\","
+echo "\"connt\":\"$(j "${connt:--}")\","
+echo "\"conn_time\":\"$(j "${conn_time:--}")\","
+echo "\"conn_time_sec\":\"${conn_time_sec:-0}\","
+echo "\"rx\":\"$(j "${rx:--}")\","
+echo "\"tx\":\"$(j "${tx:--}")\","
+echo "\"modem\":\"MSM8917 (rpmsg-wwan / MSS)\","
+echo "\"firmware\":\"$(j "${modem_rev:--}")\","
+echo "\"mtemp\":\"${mtemp:--}\","
+echo "\"cport\":\"qrtr://0\","
+echo "\"protocol\":\"QMI (libqmi)\","
+echo "\"imei\":\"$(j "${imei:--}")\","
+echo "\"imsi\":\"$(j "${imsi:--}")\","
+echo "\"iccid\":\"$(j "${iccid:--}")\","
+echo "\"csq\":\"$csq\","
+echo "\"rssi\":\"${rssi:--}\","
+echo "\"rsrp\":\"${rsrp:--}\","
+echo "\"rsrq\":\"${rsrq:--}\","
+echo "\"sinr\":\"${sinr:--}\","
+echo "\"pband\":\"$(bandlabel "$band")\","
+echo "\"earfcn\":\"${earfcn:--}\","
+echo "\"pci\":\"${pci:--}\","
+echo "\"cid_dec\":\"${cid:--}\","
+echo "\"cid_hex\":\"$(hexof "$cid")\","
+echo "\"tac_d\":\"${tac:--}\","
+echo "\"tac_dec\":\"${tac:--}\","
+echo "\"tac_h\":\"$(hexof "$tac")\","
+echo "\"tac_hex\":\"$(hexof "$tac")\","
+echo "\"lac_dec\":\"${lac:--}\","
+echo "\"lac_hex\":\"$(hexof "$lac")\","
+echo "\"s1band\":\"-\",\"s1earfcn\":\"-\",\"s1pci\":\"-\","
+echo "\"s2band\":\"-\",\"s2earfcn\":\"-\",\"s2pci\":\"-\","
+echo "\"s3band\":\"-\",\"s3earfcn\":\"-\",\"s3pci\":\"-\","
+echo "\"s4band\":\"-\",\"s4earfcn\":\"-\",\"s4pci\":\"-\""
+echo "}"

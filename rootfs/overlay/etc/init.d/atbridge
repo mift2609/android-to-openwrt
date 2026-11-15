@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+# atbridge — jembatan pty untuk port AT modem rolex.
+#
+# Kenapa perlu: pada rolex mainline, port AT modem adalah /dev/wwan0at0 (rpmsg-wwan,
+# karakter device 242:0) — BUKAN tty. Alat seperti sms_tool dan gcom memakai tcsetattr(),
+# jadi gagal dengan "Bad file descriptor". socat membuat pty /dev/ttyAT0 yang di-relay
+# ke perangkat itu, sehingga alat-alat berbasis tty bisa bekerja.
+START=93
+# CATATAN: kernel baru (patch 0002/0003) sudah memberi tty asli /dev/ttyRPMSG*.
+# Jembatan socat ini hanya perlu kalau kernel masih memakai /dev/wwan0at0 (tanpa termios).
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /usr/bin/socat -d -d \
+		PTY,raw,echo=0,link=/dev/ttyAT0,group=dialout,mode=660 \
+		FILE:/dev/wwan0at0,nonblock,ignoreeof
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_close_instance
+}

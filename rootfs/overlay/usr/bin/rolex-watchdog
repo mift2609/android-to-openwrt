@@ -1,0 +1,52 @@
+#!/bin/sh
+# rolex-watchdog — jaga layanan penting tetap hidup (dijalankan cron tiap 2 menit).
+#
+# Kenapa perlu: urutan boot di device ini tidak selalu mulus —
+#   * MSS modem kadang masih "offline" saat rolex-modem jalan di S95 (LTE tak pernah naik),
+#   * layanan procd rolex-lte bisa berhenti,
+#   * vif AP WiFi kadang hilang saat netifd menata ulang interface.
+# Daripada mengandalkan urutan rc.d, watchdog ini memulihkan tiap 2 menit.
+LOG=/var/log/rolex-watchdog.log
+MSS=/sys/class/remoteproc/remoteproc1/state
+say() { echo "$(date '+%F %T') $*" >> $LOG; }
+
+[ "$(cat $MSS 2>/dev/null)" = "running" ] || {
+	say "MSS modem offline -> bring-up (modules + modem)"
+	/etc/init.d/rolex-modules start >/dev/null 2>&1
+	/etc/init.d/rolex-modem start >/dev/null 2>&1
+}
+
+/etc/init.d/rolex-lte running || {
+	say "layanan rolex-lte mati -> start"
+	/etc/init.d/rolex-lte start >/dev/null 2>&1
+}
+
+iw dev wlan0 info 2>/dev/null | grep -q "type AP" || {
+	say "AP WiFi mati -> start rolex-wifi"
+	/etc/init.d/rolex-wifi start >/dev/null 2>&1
+}
+
+# AdGuard Home (DNS penyaring iklan) — kalau mati, hidupkan lagi
+if [ -x /etc/init.d/adguardhome ]; then
+	/etc/init.d/adguardhome running >/dev/null 2>&1 || {
+		say "AdGuard Home mati -> dinyalakan"
+		/etc/init.d/adguardhome start >/dev/null 2>&1
+	}
+fi
+
+# ModemManager sering tidak menemukan modem kalau dia start sebelum MSS bangun
+# (gejala: mmcli -L kosong, `mmcli -m any` -> "couldn't find modem", halaman LuCI
+# tidak bisa menampilkan daftar band / lock band). Restart MM setelah MSS hidup.
+if [ "$(cat $MSS 2>/dev/null)" = "running" ]; then
+	mmcli -L 2>/dev/null | grep -q "ModemManager1/Modem" || {
+		say "ModemManager tidak melihat modem -> restart MM"
+		/etc/init.d/modemmanager restart >/dev/null 2>&1
+	}
+fi
+
+# perubahan konfigurasi dari LuCI (Network -> Wireless) diterapkan ke AP
+[ -x /usr/bin/rolex-wifi-ctl ] && /usr/bin/rolex-wifi-ctl sync >/dev/null 2>&1
+
+# jaga ukuran log
+[ -f $LOG ] && [ "$(wc -l < $LOG)" -gt 500 ] && { tail -200 $LOG > $LOG.tmp && mv $LOG.tmp $LOG; }
+exit 0
