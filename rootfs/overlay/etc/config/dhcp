@@ -14,13 +14,14 @@ config dnsmasq
 	option localservice '1'
 	option ednspacket_max '1232'
 	option localuse '1'
-	option noresolv '0'
-	option server '8.8.8.8' '8.8.4.4'
-	option resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
-	# AdGuard Home memegang :53 untuk klien (penyaring iklan); dnsmasq memindah
-	# DNS-nya ke 5353 di loopback dan tetap melayani DHCP + nama lokal .lan.
-	# AGH memakai 127.0.0.1:5353 sebagai upstream-nya.
-	option port '5353'
+	# Klien menanyakan dnsmasq di :53 (jalur ini yang terbukti jalan). dnsmasq
+	# meneruskan semuanya ke AdGuard Home di 127.0.0.1:5353 untuk penyaringan iklan;
+	# AGH lalu meneruskan ke DNS publik (8.8.8.8/1.1.1.1).
+	# CATATAN PENTING: jangan menaruh AdGuard langsung di :53 untuk klien — pernah
+	# dicoba dan membuat klien WiFi "tersambung tapi tanpa internet" (iPhone iOS).
+	option noresolv '1'
+	option port '53'
+	list server '127.0.0.1#5353'
 
 # PENTING: nama interface HARUS 'usb' dan 'wifi' (lihat /etc/config/network).
 # Sebelumnya seksi DHCP menunjuk interface 'lan' yang TIDAK ADA -> dnsmasq tak

@@ -16,9 +16,12 @@ http_proxy: ""
 language: id
 theme: auto
 dns:
+  # AdGuard TIDAK memegang port 53 lagi. Klien menanyakan dnsmasq (192.168.*.1:53),
+  # dnsmasq meneruskan ke sini (127.0.0.1:5353) untuk penyaringan iklan, lalu AGH
+  # meneruskan ke DNS publik. Sebelumnya AGH di :53 membuat klien WiFi "tak ada internet".
   bind_hosts:
-    - 0.0.0.0
-  port: 53
+    - 127.0.0.1
+  port: 5353
   anonymize_client_ip: false
   ratelimit: 20
   ratelimit_subnet_len_ipv4: 24
@@ -26,7 +29,9 @@ dns:
   ratelimit_whitelist: []
   refuse_any: true
   upstream_dns:
-    - 127.0.0.1:5353
+    - 8.8.8.8
+    - 8.8.4.4
+    - 1.1.1.1
   upstream_dns_file: ""
   bootstrap_dns:
     - 9.9.9.10
@@ -65,8 +70,7 @@ dns:
   statistics_enabled: true
   statistics_interval: 360
   use_private_ptr_resolvers: true
-  local_ptr_upstreams:
-    - 127.0.0.1:5353
+  local_ptr_upstreams: []
   use_dns64: false
   dns64_prefixes: []
   serve_http3: false
