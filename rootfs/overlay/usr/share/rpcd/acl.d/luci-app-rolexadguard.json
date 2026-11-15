@@ -1,0 +1,21 @@
+{
+	"luci-app-rolexadguard": {
+		"description": "AdGuard Home rolex",
+		"read": {
+			"ubus": {
+				"*": [
+					"*"
+				]
+			},
+			"uci": [
+				"*"
+			],
+			"file": {
+				"/usr/bin/rolex-adguard-ctl": [
+					"exec"
+				]
+			}
+		},
+		"write": {}
+	}
+}

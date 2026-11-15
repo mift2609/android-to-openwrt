@@ -123,6 +123,10 @@ find_rootfs() {
 ROOTDEV=$(find_rootfs)
 if [ -n "$ROOTDEV" ]; then
   echo "[ok] rootfs -> $ROOTDEV — switch_root (switch_root memindahkan /dev,/proc,/sys sendiri)"
+  # INITRAMFS=1 dipakai fase awal saja: procd membaca env ini (getenv) dan kalau terbawa
+  # sistem dilaporkan sebagai "initramfs" -> LuCI menampilkan peringatan recovery mode
+  # walau rootfs sudah ext4 rw (perubahan sebenarnya persist).
+  unset INITRAMFS
   exec switch_root /newroot /sbin/init
 fi
 
@@ -132,6 +136,7 @@ while true; do
   ROOTDEV=$(find_rootfs)
   if [ -n "$ROOTDEV" ]; then
     echo "[ok] rootfs -> $ROOTDEV — switch_root"
+    unset INITRAMFS
     exec switch_root /newroot /sbin/init
   fi
 done
