@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+# rolex-lte — bawa data seluler rolex (msm8917 mainline) hidup otomatis.
+# Prasyarat: rolex-modem sudah menyalakan MSS + rmtfs + /lib/firmware.
+# Detail kenapa urutannya begini ada di /usr/bin/rolex-lte-run.
+START=96
+STOP=11
+USE_PROCD=1
+
+start_service() {
+	logger -t rolex-lte "start"
+	procd_open_instance lte
+	procd_set_param command /usr/bin/rolex-lte-run
+	procd_set_param respawn 3600 5 0
+	procd_set_param stdout 0
+	procd_set_param stderr 0
+	procd_close_instance
+}

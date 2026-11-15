@@ -1,0 +1,151 @@
+#!/bin/sh
+# rolex-lte-run — jaga data call LTE rolex (msm8917, mainline) hidup.
+#
+# Pelajaran dari perangkat (semua terbukti):
+#  * Firmware modem TIDAK mengaktifkan UIM provisioning session sendiri: kartu "present"
+#    tapi application tetap 'detected' dan AT+CPIN? = SIM busy -> aktifkan lewat QMI UIM
+#    Change Provisioning Session (qmicli >= 1.34).
+#  * bam-dmux: WDS Start Network WAJIB didahului Bind Mux Data Port di klien QMI yang sama
+#    (tanpa itu: QMI error 70 InvalidOperation). qmicli hanya boleh 1 aksi WDS per proses
+#    -> dipakai /usr/bin/rolex-qmi mode `up` (menahan klien selama call hidup).
+#  * Setelah modem di-restart, port AT sering belum siap: AT+CFUN=1 bisa hilang diam-diam
+#    (CFUN tetap 0 -> modem hanya 'not-registered-searching'). Karena itu CFUN diverifikasi
+#    ulang lewat AT+CFUN? sampai bernilai 1.
+Q=/usr/bin/qmicli
+T=/usr/bin/rolex-qmi
+AT=/dev/wwan0at0
+MSS=/sys/class/remoteproc/remoteproc1/state
+LOG=/var/log/rolex-lte.log
+APN=${APN:-internet}
+
+log() { echo "$(date '+%H:%M:%S') $*" >> $LOG; }
+
+at_open() { exec 3<>$AT 2>/dev/null; stty -F $AT raw -echo 115200 2>/dev/null; }
+at_send() { [ -e "$AT" ] || return 1; printf '%s\r' "$1" > "$AT" 2>/dev/null; }
+# at_expect <cmd> <substring> <timeout detik>
+at_expect() {
+	c=$1; want=$2; tmo=${3:-15}
+	[ -e "$AT" ] || return 1
+	exec 3<>$AT 2>/dev/null
+	stty -F $AT raw -echo 115200 2>/dev/null
+	printf '%s\r' "$c" >&3
+	t=0
+	while [ $t -lt $tmo ]; do
+		while read -t 2 -r line <&3; do
+			echo "$line" | grep -q -- "$want" && { exec 3<&-; return 0; }
+		done
+		t=$((t+2))
+	done
+	exec 3<&-
+	return 1
+}
+
+qmi_wait() {
+	i=0
+	while [ $i -lt 90 ]; do
+		$Q -d qrtr://0 --dms-get-manufacturer >/dev/null 2>&1 && return 0
+		sleep 1; i=$((i+1))
+	done
+	return 1
+}
+
+uim_session() {
+	$Q -d qrtr://0 --uim-get-card-status 2>/dev/null | grep -q "session doesn't exist" || return 0
+	AID=$($Q -d qrtr://0 --uim-get-card-status 2>/dev/null | grep "usim (2)" -m1 -A3 | tail -1 | awk '{print $1}' | tr -d ' ')
+	[ -z "$AID" ] && AID="A0:00:00:00:87:10:02:FF:FF:FF:FF:89:07:09:00:00"
+	$Q -d qrtr://0 --uim-change-provisioning-session="slot=1,activate=yes,session-type=primary-gw-provisioning,aid=$AID" >/dev/null 2>&1
+	log "sesi UIM aktif (slot 1)"
+}
+
+# CFUN=1 dengan verifikasi; ulangi kalau port AT belum siap
+ssp_auto() {
+	# Di firmware ini AT+COPS=0 menjawab ERROR; pemicu registrasi yang andal adalah
+	# NAS Set System Selection Preference = automatic.
+	$Q -d qrtr://0 --nas-set-system-selection-preference="automatic" >/dev/null 2>&1
+	log "system selection: automatic"
+}
+
+rf_on() {
+	i=0
+	while [ $i -lt 12 ]; do
+		at_expect "AT+CFUN=1" "OK" 8 && at_expect "AT+CFUN?" "+CFUN: 1" 8 && { log "RF on"; return 0; }
+		sleep 3; i=$((i+1))
+	done
+	log "peringatan: CFUN tidak bisa dipastikan 1"
+	return 1
+}
+
+reg_state() { $Q -d qrtr://0 --nas-get-serving-system 2>/dev/null | grep -m1 "Registration state"; }
+wait_register() {
+	i=0
+	while [ $i -lt 120 ]; do
+		case "$(reg_state)" in *"'registered'"*) return 0;; esac
+		sleep 4; i=$((i+4))
+	done
+	return 1
+}
+
+modem_restart() {
+	log "restart remoteproc MSS"
+	echo stop > $MSS 2>/dev/null; sleep 3
+	echo start > $MSS 2>/dev/null
+	qmi_wait
+	uim_session
+	sleep 3
+	rf_on
+}
+
+apply_ip() {
+	IP=$(awk '/^IPv4 /{print $2}' /tmp/rolex-lte.dyn | tail -1)
+	GW=$(awk '/^GW /{print $2}' /tmp/rolex-lte.dyn | tail -1)
+	MASK=$(awk '/^MASK /{print $2}' /tmp/rolex-lte.dyn | tail -1)
+	D1=$(awk '/^DNS1 /{print $2}' /tmp/rolex-lte.dyn | tail -1)
+	D2=$(awk '/^DNS2 /{print $2}' /tmp/rolex-lte.dyn | tail -1)
+	[ -z "$IP" ] && return 1
+	case $MASK in
+		255.255.255.192) PFX=26;; 255.255.255.224) PFX=27;; 255.255.255.240) PFX=28;;
+		255.255.255.248) PFX=29;; 255.255.255.252) PFX=30;; 255.255.255.0) PFX=24;;
+		*) PFX=30;;
+	esac
+	ip link set wwan0 up
+	ip addr flush dev wwan0 2>/dev/null
+	ip addr add "$IP/$PFX" dev wwan0
+	ip route replace default via "$GW" dev wwan0
+	{ [ -n "$D1" ] && echo "nameserver $D1"; [ -n "$D2" ] && echo "nameserver $D2"; } > /etc/resolv.conf
+	log "wwan0 $IP/$PFX gw $GW dns $D1,$D2"
+}
+
+log "=== mulai $(date) ==="
+qmi_wait || { log "QMI tidak siap"; modem_restart; }
+uim_session
+rf_on
+ssp_auto
+
+if ! wait_register; then
+	log "belum terdaftar -> restart modem"
+	modem_restart
+	ssp_auto
+	wait_register || log "tetap belum terdaftar, tetap coba data"
+fi
+
+while :; do
+	$Q -d qrtr://0 --dpm-open-port="hw-data-ep-type=bam-dmux,hw-data-ep-iface-number=0,hw-data-rx-id=1,hw-data-tx-id=1" >/dev/null 2>&1
+	sleep 2
+	: > /tmp/rolex-lte.dyn
+	$T up "$APN" > /tmp/rolex-lte.dyn 2>&1 &
+	RP=$!
+	i=0
+	while [ $i -lt 90 ]; do
+		grep -q "^IPv4 " /tmp/rolex-lte.dyn 2>/dev/null && { apply_ip; break; }
+		kill -0 $RP 2>/dev/null || break
+		sleep 1; i=$((i+1))
+	done
+	while kill -0 $RP 2>/dev/null; do
+		sleep 15
+		ip -4 addr show wwan0 2>/dev/null | grep -q "inet " || { log "IP hilang"; break; }
+	done
+	kill $RP 2>/dev/null; wait $RP 2>/dev/null
+	log "call berhenti, ulang 5s"
+	sleep 5
+	wait_register || { log "belum terdaftar -> restart modem"; modem_restart; ssp_auto; }
+done

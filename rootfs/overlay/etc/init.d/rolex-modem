@@ -18,6 +18,16 @@ USE_PROCD=1
 
 FW=/lib/firmware
 
+partlabel_links() {
+	# rmtfs dan mount partisi modem butuh nama: OpenWrt tidak selalu bikin /dev/disk/by-partlabel
+	mkdir -p /dev/disk/by-partlabel
+	for d in /sys/class/block/mmcblk*p*; do
+		[ -f "$d/uevent" ] || continue
+		n=$(grep -o 'PARTNAME=[^[:space:]]*' "$d/uevent" | cut -d= -f2)
+		[ -n "$n" ] && ln -sf "../../$(basename "$d")" "/dev/disk/by-partlabel/$n"
+	done
+}
+
 extract_firmware() {
 	[ -f "$FW/modem.mdt" ] && [ -f "$FW/mba.mbn" ] && return 0
 	mkdir -p "$FW" /mnt/rolex-modem
@@ -32,13 +42,28 @@ extract_firmware() {
 }
 
 load_modules() {
-	# Dipakai insmod dengan path eksplisit, bukan modprobe: busybox modprobe di rootfs ini
-	# tidak selalu menemukan modul walaupun modules.dep ada (terbukti: modprobe rc=0 tapi
-	# /sys/class/remoteproc/remoteproc1 tidak muncul). qrtr_smd sudah built-in, tidak perlu.
-	for m in qcom_q6v5 qcom_q6v5_mss qcom_bam_dmux rpmsg_wwan_ctrl; do
-		ko=$(find "/lib/modules/$(uname -r)" -name "$m.ko" 2>/dev/null | head -1)
-		[ -n "$ko" ] && insmod "$ko" 2>/dev/null
+	# qcom_q6v5_mss BUTUH mdt_loader, qcom_common, qcom_pil_info (biasanya baru termuat oleh
+	# qcom_wcnss_pil saat rolex-wifi jalan di S94). rolex-modem jalan lebih awal, jadi muat
+	# dependensi itu eksplisit — kalau tidak, insmod q6v5_mss gagal tanpa pesan dan
+	# /sys/class/remoteproc/remoteproc1 tidak pernah muncul.
+	K=/lib/modules/$(uname -r)
+	_try=0
+	while [ $_try -lt 20 ]; do
+		for ko in $K/kernel/drivers/soc/qcom/mdt_loader.ko \
+			  $K/kernel/drivers/soc/qcom/qcom_common.ko \
+			  $K/kernel/drivers/remoteproc/qcom_pil_info.ko \
+			  $K/kernel/drivers/remoteproc/qcom_q6v5.ko \
+			  $K/kernel/drivers/remoteproc/qcom_q6v5_mss.ko \
+			  $K/kernel/drivers/net/wwan/qcom_bam_dmux.ko \
+			  $K/kernel/drivers/net/wwan/rpmsg_wwan_ctrl.ko; do
+			[ -f "$ko" ] && insmod "$ko" >/dev/null 2>&1
+		done
+		[ -d /sys/class/remoteproc/remoteproc1 ] && return 0
+		_try=$((_try+1))
+		sleep 2
 	done
+	logger -t rolex-modem "modul MSS gagal dimuat setelah $_try percobaan"
+	return 1
 }
 
 mss_path() {
@@ -50,19 +75,18 @@ mss_path() {
 }
 
 start_service() {
+	partlabel_links
 	extract_firmware
-	# rmtfs butuh nama partisi: sediakan /dev/disk/by-partlabel/* (OpenWrt tidak selalu bikin ini)
-	mkdir -p /dev/disk/by-partlabel
-	for d in /sys/class/block/mmcblk*p*; do
-		[ -f "$d/uevent" ] || continue
-		n=$(grep -o 'PARTNAME=[^[:space:]]*' "$d/uevent" | cut -d= -f2)
-		[ -n "$n" ] && ln -sf "../../$(basename "$d")" "/dev/disk/by-partlabel/$n"
-	done
-
 	load_modules
 	sleep 2
 
-	m=$(mss_path) || { logger -t rolex-modem "remoteproc MSS tidak ada di DT"; return 1; }
+	_w=0
+	m=""
+	while [ $_w -lt 10 ]; do
+		m=$(mss_path) && break
+		sleep 2; _w=$((_w+1))
+	done
+	[ -n "$m" ] || { logger -t rolex-modem "remoteproc MSS tidak ada di DT"; return 1; }
 	[ -x /usr/bin/rmtfs ] && {
 		pidof rmtfs >/dev/null || start-stop-daemon -S -b -x /usr/bin/rmtfs -- -P -o /dev/disk/by-partlabel >/dev/null 2>&1
 	}
