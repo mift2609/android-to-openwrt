@@ -11,6 +11,9 @@
 				],
 				"/usr/bin/rolex-sms-ctl": [
 					"exec"
+				],
+				"/usr/bin/rolex-wifi-ctl": [
+					"exec"
 				]
 			},
 			"ubus": {

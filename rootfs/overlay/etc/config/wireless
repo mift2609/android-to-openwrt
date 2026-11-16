@@ -1,0 +1,20 @@
+config wifi-device 'radio0'
+	option type 'mac80211'
+	option path 'platform/soc@0/a204000.remoteproc/remoteproc/remoteproc2/remoteproc2:smd-edge/remoteproc2:smd-edge.WCNSS_CTRL.-1.-1/a204000.remoteproc:smd-edge:wcnss:wifi'
+	option band '2g'
+	option channel '6'
+	option htmode 'HT20'
+	option disabled '0'
+	option cell_density '0'
+	option country 'ID'
+
+# AP rolex dijaga /usr/bin/rolex-wifi-ctl (hostapd manual + IP statis), bukan netifd.
+# Karena itu halaman LuCI "Network -> Wireless" memperlihatkan radio sebagai tidak aktif —
+# itu normal untuk rolex; keadaan AP yang sebenarnya ada di Modem -> Modem LTE (tab Modem).
+config wifi-iface 'wifinet0'
+	option device 'radio0'
+	option mode 'ap'
+	option network 'wifi'
+	option ssid 'rolex-hotspot'
+	option encryption 'psk2'
+	option key 'rolex12345'

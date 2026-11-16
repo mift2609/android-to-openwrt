@@ -119,7 +119,8 @@ return view.extend({
 		return Promise.all([
 			ctl(['status']),
 			fs.exec('/usr/bin/rolex-3ginfo-json', []),
-			fs.exec('/usr/bin/rolex-sms-ctl', [ 'list' ]).catch(function () { return { stdout: '' }; })
+			fs.exec('/usr/bin/rolex-sms-ctl', [ 'list' ]).catch(function () { return { stdout: '' }; }),
+			fs.exec('/usr/bin/rolex-wifi-ctl', [ 'status' ]).catch(function () { return { stdout: '' }; })
 		]);
 	},
 
@@ -133,6 +134,7 @@ return view.extend({
 			var m = /^id=(\d+)\s+state=(\S+)/.exec(l.trim());
 			return m ? { id: m[1], state: m[2] } : null;
 		}).filter(function (x) { return x; });
+		var wifi = kv((res && res[3] && res[3].stdout) || '');
 		var bandsCur = bandsFrom(block, 'current');
 		var bandsSup = bandsFrom(block, 'supported');
 
@@ -446,10 +448,21 @@ return view.extend({
 					_('Target ping diubah lewat uci rolexlte.main.ping_target (kosong = 8.8.8.8).'))
 			]),
 			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, _('WiFi')),
+				E('h3', {}, _('WiFi (AP rolex)')),
+				E('table', { 'class': 'table' }, [
+					row(_('Status AP'), wifi.ap_state === 'jalan' ? _('jalan') : val(wifi.ap_state)),
+					row(_('SSID'), E('strong', {}, val(wifi.ssid))),
+					row(_('Sandinya'), wifi.key ? _('disimpan (lihat rolex-wifi-ctl status)') : _('terbuka')),
+					row(_('Channel'), val(wifi.channel)),
+					row(_('IP router WiFi'), val(wifi.ip)),
+					row(_('Klien terhubung'), val(wifi.clients))
+				]),
+				E('p', { 'class': 'cbi-value-description' },
+					_('AP ini dijaga /usr/bin/rolex-wifi-ctl (hostapd + IP statis), bukan netifd — karena itu ' +
+					  'LuCI Network → Wireless memperlihatkan radio sebagai tidak aktif, padahal AP jalan.')),
 				E('p', {}, [
-					_('Pengaturan WiFi (SSID, sandi, channel) ada di menu terpisah: '),
-					E('a', { 'href': L.env.cgi_base + '/admin/network/wireless' }, _('Network → Wireless'))
+					_('Ganti SSID/sandi/channel: '),
+					E('code', {}, '/usr/bin/rolex-wifi-ctl ssid <nama> | key <sandi> | channel <1-13> | apply')
 				])
 			])
 		]);
