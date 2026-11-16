@@ -3,7 +3,8 @@
 # Aslinya 3ginfo.sh membaca modem lewat gcom/AT; modem rolex tak punya tty AT
 # (port WWAN char device -> tcsetattr gagal), jadi nilainya diambil dari qmicli (QMI/QRTR).
 # Dipanggil oleh /usr/share/3ginfo-lite/3ginfo.sh (pembungkus, lihat berkas itu).
-# Statistik koneksi (conn_time/rx/tx) datang dari skrip asli via variabel lingkungan.
+# Statistik koneksi (conn_time/rx/tx) dan suhu dihitung sendiri di sini, supaya script ini
+# bisa dipanggil langsung (mis. dari halaman LuCI rolexmodem) tanpa pembungkus 3ginfo.sh.
 
 Q="qmicli -d qrtr://0"
 j() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
@@ -57,6 +58,27 @@ sigpct=$(awk -v r="${rsrp:-0}" 'BEGIN{ p=(r+120)/44*100; if(p<0)p=0; if(p>100)p=
 # CSQ ditaksir dari RSSI (CSQ = (RSSI+113)/2, 0..31)
 csq=$(awk -v r="${rssi:-0}" 'BEGIN{ c=(r+113)/2; if(c<0)c=0; if(c>31)c=31; printf "%d", c }')
 hexof() { [ -n "$1" ] && printf "0x%X" "$1" || echo "-"; }
+
+# --- statistik koneksi -------------------------------------------------------
+# rx/tx: kernel tidak mengisi counter wwan0 (driver bam-dmux), jadi pakai chain ROLXSTAT
+# yang dibuat /etc/init.d/rolex-nat.
+human() {
+	[ -n "$1" ] || { echo "-"; return; }
+	awk -v b="$1" 'BEGIN { if (b >= 1048576) printf "%.1f MiB", b/1048576; else if (b >= 1024) printf "%.1f KiB", b/1024; else printf "%d B", b }'
+}
+STAT=$(iptables -L ROLXSTAT -v -n 2>/dev/null)
+rx=$(human "$(printf '%s\n' "$STAT" | awk '$3 == "RETURN" && $6 == "wwan0" { print $2; exit }')")
+tx=$(human "$(printf '%s\n' "$STAT" | awk '$3 == "RETURN" && $7 == "wwan0" { print $2; exit }')")
+if ip -4 -o addr show wwan0 >/dev/null 2>&1; then connt=LTE; else connt=-; fi
+if [ -s /tmp/rolex-wwan0-since ]; then
+	conn_time_sec=$(( $(cut -d. -f1 /proc/uptime) - $(cat /tmp/rolex-wwan0-since 2>/dev/null || echo 0) ))
+	if [ "$conn_time_sec" -gt 0 ] 2>/dev/null; then
+		conn_time=$(awk -v t="$conn_time_sec" 'BEGIN { printf "%dd, %02d:%02d:%02d", int(t/86400), int(t/3600)%24, int(t/60)%60, t%60 }')
+	fi
+fi
+# suhu: zona termal terpanas (SOC/modem)
+raw=$(for z in /sys/class/thermal/thermal_zone*/temp; do cat "$z" 2>/dev/null; done | sort -n | tail -1)
+[ -n "$raw" ] && mtemp=$(awk -v t="$raw" 'BEGIN { printf "%.1f", t/1000 }')
 
 echo "{"
 echo "\"error\":\"\","

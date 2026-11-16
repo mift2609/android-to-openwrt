@@ -31,6 +31,8 @@ function bandsFrom(block, which) {
 			continue;
 		}
 		if (take) {
+			// garis pemisah blok (mis. "------" / ",,,") bukan nama band -> berhenti
+			if (/^[,\s-]+$/.test(l)) break;
 			if (l !== '' && /^[ ,a-z0-9-]+$/i.test(l)) { out.push(l); continue; }
 			break;
 		}
@@ -132,37 +134,28 @@ return view.extend({
 			return _('sangat lemah');
 		}
 
-		var status = E('table', { 'class': 'table' }, [
-			(!d.RSRP && !d.RSSI && !d.RSRP)
-				? E('tr', { 'class': 'tr' }, [
-					E('td', { 'class': 'td left', 'colspan': '2' }, [
-						E('strong', {}, _('Modem belum siap: nilai sinyal belum bisa dibaca.')),
-						E('br'),
-						_('Biasanya 1–2 menit setelah boot (mencari jaringan). Tunggu lalu tekan Segarkan, ' +
-						  'atau jalankan /usr/bin/rolex-watchdog di System → Terminal.')
-					])
-				])
-				: null,
+		// Tabel status: hanya hal-hal yang TIDAK ada di bagian "Informasi 4G / LTE" di bawah
+		// (sinyal/operator/sel/pita ada di sana supaya tidak tampil dobel).
+		var statusRows = [
 			row(_('APN'), E('strong', {}, d.apn || '—')),
-			row(_('IP address'), d.ip),
-			row(_('Gateway'), d.gateway),
-			row(_('Registrasi'), d.registration),
+			row(_('Registrasi'), val(d.registration)),
 			row(_('Jaringan'), (d.network || '—').toUpperCase()),
-			row(_('Operator'), (d.operator || '—') + (d.plmn ? ' (' + d.plmn + ')' : '')),
-			row(_('Cell ID / TAC'), (d.cell_id || '—') + ' / ' + (d.tac || '—')),
 			row(_('PS (data)'), d.ps),
-			row(_('Band aktif'), bandLabel(d.band), 'important'),
-			row(_('Channel'), d.channel),
 			row(_('IP modem / internet'), d.io),
 			row(_('Layanan LTE'), d.lte_service),
-			row(_('ModemManager'), d.mm_state),
-			row(_('Sinyal RSRP'), (d.RSRP || '—') + ' (' + signalQuality() + ')'),
-			row(_('Sinyal RSRQ'), d.RSRQ),
-			row(_('Sinyal SINR'), d.SNR),
-			row(_('RSSI'), d.RSSI),
-			row(_('Band prefs sekarang'), splitBands(bandsCur).map(bandLabel).join(', ') || '—'),
-			row(_('Band didukung'), splitBands(bandsSup).map(bandLabel).join(', ') || '—')
-		]);
+			row(_('ModemManager'), d.mm_state)
+		];
+		if (!d.RSRP && !d.RSSI) {
+			statusRows.unshift(E('tr', { 'class': 'tr' }, [
+				E('td', { 'class': 'td left', 'colspan': '2' }, [
+					E('strong', {}, _('Modem belum siap: nilai sinyal belum bisa dibaca.')),
+					E('br'),
+					_('Biasanya 1–2 menit setelah boot (mencari jaringan). Tunggu lalu tekan Segarkan, ' +
+					  'atau jalankan /usr/bin/rolex-watchdog di System → Terminal.')
+				])
+			]));
+		}
+		var status = E('table', { 'class': 'table' }, statusRows);
 
 		var apnInput = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': d.apn || '' });
 		var famSelect = E('select', { 'class': 'cbi-input-select' },
@@ -301,7 +294,10 @@ return view.extend({
 					row(_('Teknologi'), val(g.mode)),
 					row(_('Registrasi'), val(g.registration)),
 					row(_('Statistik koneksi'), val(g.conn_time) + (g.rx ? ' \u2014 rx ' + g.rx + ' / tx ' + g.tx : '')),
-					row(_('IP / gateway'), val(d.ip) + ' / ' + val(d.gateway))
+					row(_('IP / gateway'), val(d.ip) + ' / ' + val(d.gateway)),
+					row(_('Channel'), val(d.channel)),
+					row(_('Band prefs sekarang'), splitBands(bandsCur).map(bandLabel).join(', ') || '—'),
+					row(_('Band didukung'), splitBands(bandsSup).map(bandLabel).join(', ') || '—')
 				]),
 				E('h4', {}, _('Informasi Modem')),
 				E('table', { 'class': 'table' }, [
