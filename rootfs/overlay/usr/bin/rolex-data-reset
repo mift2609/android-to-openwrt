@@ -1,7 +1,11 @@
 #!/bin/sh
 # rolex-data-reset — pulihkan data call LTE tanpa reboot perangkat (jalankan manual).
 # Penjaga otomatis di rolex-lte-run memakai tangga yang sama.
-# pakai: rolex-data-reset [soft|rf|driver|modem|auto]
+# pakai: rolex-data-reset soft|rf|rf2|modem|auto
+#   soft  = ulang sesi data          rf   = siklus RF (low-power->online) + sesi
+#   rf2   = siklus RF kedua, jeda lebih lama   modem = restart modem MSS
+#   auto  = jalankan berurutan sampai internet kembali
+# Catatan: memuat ulang driver bam-dmux TIDAK dipakai — terbukti meninggalkan wwan0 tanpa IP.
 LTE=/etc/init.d/rolex-lte
 LOG=/var/log/rolex-lte.log
 log() { echo "$(date '+%H:%M:%S') [reset] $*" >> $LOG; }
