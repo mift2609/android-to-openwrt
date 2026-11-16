@@ -94,6 +94,13 @@ start() {
 	[ -e /sys/class/ieee80211/phy0 ] || { log "phy0 TIDAK muncul (${i}s)"; return 0; }
 	log "phy0 muncul setelah ${i}s"
 
+	# Lepaskan radio dari netifd dulu: kalau netifd sempat `wifi up` (mis. radio di-Enable di LuCI),
+	# hostapd-nya memegang driver mode wlan0 dan hostapd kita gagal
+	# ("nl80211: kernel reports: Match already configured" / "Could not configure driver mode").
+	wifi down >/dev/null 2>&1
+	sleep 2
+	# dan kunci radionya di UCI supaya netifd tak mencoba lagi (kalau dicoba, vif kita dihapus)
+	[ "$(uci -q get wireless.radio0.disabled)" = "1" ] || { uci set wireless.radio0.disabled=1; uci commit wireless; }
 	ambil_alih
 	bikin_vif_ap || return 0
 	ip link set "$IFACE_DEV" address $MAC 2>/dev/null

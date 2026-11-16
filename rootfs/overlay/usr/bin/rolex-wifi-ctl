@@ -36,6 +36,7 @@ gen_conf() {
 	SSID=$(uci -q get "$IF.ssid"); [ -n "$SSID" ] || SSID=rolex-hotspot
 	CH=$(uci -q get wireless.radio0.channel); [ -n "$CH" ] || CH=6
 	CO=$(uci -q get wireless.radio0.country); [ -n "$CO" ] || CO=ID
+	HT=$(uci -q get wireless.radio0.htmode)
 	ENC=$(uci -q get "$IF.encryption")
 	KEY=$(uci -q get "$IF.key")
 	HID=$(uci -q get "$IF.hidden")
@@ -48,6 +49,11 @@ gen_conf() {
 		echo "country_code=$CO"
 		echo "ieee80211d=1"
 		echo "ieee80211n=1"
+		# htmode dari LuCI (HT20/HT40) — tanpa ht_capab hostapd selalu 20 MHz
+		case "$HT" in
+			HT40) echo "ht_capab=[HT40][SHORT-GI-40]" ;;
+			HT20) echo "ht_capab=[SHORT-GI-20]" ;;
+		esac
 		# WMM wajib untuk HT; tanpa ini sebagian klien (iOS) menolak 802.11n
 		echo "wmm_enabled=1"
 		echo "ctrl_interface=/var/run/hostapd"
