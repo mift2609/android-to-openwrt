@@ -238,7 +238,12 @@ while :; do
 		# menjalankan ulang layanan, jadi penjaga tidak bisa tersangkut diam-diam.
 		date +%s > /tmp/rolex-lte.beat
 		sleep $CHECK
-		if ! timeout 6 ping -c1 -W3 -I wwan0 "$PING_TARGET" >/dev/null 2>&1; then
+		# Dianggap hidup kalau SALAH SATU uji berhasil: ping yang diikat ke wwan0 (jalur data kita)
+		# atau ping biasa. ICMP lewat wwan0 kadang hilang sesaat (driver bam-dmux), dan dulu satu
+		# kegagalan palsu seperti ini cukup untuk memicu pengulangan sesi — yang justru membuat
+		# modem tersangkut. Jangan mengulang sesi hanya karena satu uji meleset.
+		if ! timeout 6 ping -c1 -W3 -I wwan0 "$PING_TARGET" >/dev/null 2>&1 &&
+		   ! timeout 6 ping -c1 -W3 "$PING_TARGET" >/dev/null 2>&1; then
 			bf=$((bf + 1))
 			log "cek internet gagal ($bf/$FAILS)"
 			if [ "$bf" -ge "$FAILS" ]; then
