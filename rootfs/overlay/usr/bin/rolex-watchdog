@@ -75,13 +75,6 @@ if [ "$(cat $MSS 2>/dev/null)" = "running" ]; then
 	fi
 fi
 
-# Radio harus tetap `disabled` di UCI: netifd/wpad tidak bisa memegang AP di driver wcn36xx, dan
-# kalau netifd mencoba, vif wlan0 milik rolex-wifi dihapus. Tombol Enable di LuCI karena itu sia-sia.
-[ "$(uci -q get wireless.radio0.disabled)" = "1" ] || {
-	uci set wireless.radio0.disabled=1; uci commit wireless
-	say "radio0 dikunci disabled=1 (netifd tidak boleh memegang AP)"
-}
-
 # Perubahan konfigurasi dari LuCI (Network -> Wireless) / uci diterapkan ke AP berjalan.
 if /etc/init.d/rolex-wifi enabled >/dev/null 2>&1; then
 	/etc/init.d/rolex-wifi sinkron >/dev/null 2>&1
