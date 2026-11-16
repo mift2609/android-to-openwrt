@@ -15,10 +15,10 @@
 				"/usr/bin/rolex-wifi-ctl": [
 					"exec"
 				],
-				"/sbin/iw": [
+				"/etc/init.d/rolex-wifi": [
 					"exec"
 				],
-				"/etc/init.d/rolex-wifi": [
+				"/usr/sbin/iw": [
 					"exec"
 				]
 			},

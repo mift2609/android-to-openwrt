@@ -12,7 +12,8 @@ return view.extend({
 	load: function () {
 		return Promise.all([
 			fs.exec('/usr/bin/rolex-wifi-ctl', [ 'status' ]).catch(function () { return { stdout: '' }; }),
-			fs.exec('/sbin/iw', [ 'dev', 'wlan0', 'station', 'dump' ]).catch(function () { return { stdout: '' }; })
+			fs.exec('/usr/sbin/iw', [ 'dev', 'wlan0', 'station', 'dump' ]).catch(function () { return { stdout: '' }; }),
+			fs.exec('/usr/sbin/iw', [ 'dev', 'wlan0', 'info' ]).catch(function () { return { stdout: '' }; })
 		]);
 	},
 
@@ -56,6 +57,12 @@ return view.extend({
 			});
 		});
 
+		// info radio dari 'iw dev wlan0 info' (channel + frekuensi, BSSID)
+		var info = String((res && res[2] && res[2].stdout) || '');
+		var bssid = (info.match(/addr\s+([0-9a-f:]{17})/i) || [])[1] || '';
+		var chInfo = (info.match(/channel\s+([0-9]+)\s*\(([0-9]+)\s*MHz\)/) || []);
+		var labelKanal = chInfo.length ? (chInfo[1] + ' (' + (parseInt(chInfo[2], 10) / 1000).toFixed(3) + ' GHz)') : kv.channel;
+
 		var jalan = kv.ap_state === 'jalan';
 		var nilai = function (v) { return (v === undefined || v === null || v === '') ? '—' : v; };
 		var kib = function (b) {
@@ -75,7 +82,7 @@ return view.extend({
 						E('div', {}, [
 							E('strong', { 'style': jalan ? 'color:#2e7d32' : 'color:#c62828' },
 								jalan ? _('aktif — memancar & melayani') : _('tidak berjalan')),
-							' · ' + _('channel') + ' ' + nilai(kv.channel),
+							' · ' + _('Channel') + ' ' + nilai(labelKanal),
 							' · ' + _('IP') + ' ' + nilai(kv.ip)
 						])
 					]),
@@ -100,7 +107,8 @@ return view.extend({
 						E('strong', {}, _('SSID') + ': ' + nilai(kv.ssid)),
 						E('div', { 'class': 'cbi-value-description' },
 							_('Mode') + ': Master · ' +
-							(kv.encryption === 'none' || !kv.encryption ? _('terbuka') : 'WPA2-PSK') + ' · ' +
+							(kv.encryption === 'none' || !kv.encryption ? _('Encryption') + ': None' : 'WPA2-PSK') + ' · ' +
+							_('BSSID') + ': ' + nilai(bssid) + ' · ' +
 							(klien.length ? (klien.length + ' ' + _('klien terhubung')) : _('belum ada klien')))
 					])
 				])
