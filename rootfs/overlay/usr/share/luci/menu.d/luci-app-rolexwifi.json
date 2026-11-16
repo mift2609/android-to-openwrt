@@ -1,0 +1,15 @@
+{
+	"admin/network/wireless": {
+		"title": "Wireless",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "rolexwifi/wifi"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-rolexmodem"
+			]
+		}
+	}
+}
