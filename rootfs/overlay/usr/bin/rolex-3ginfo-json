@@ -29,7 +29,12 @@ lac=$(num "$(echo "$serv" | sed -n 's/^[[:space:]]*3GPP location area code: \(.*
 rf=$($Q --nas-get-rf-band-info 2>/dev/null | tr -d "'")
 band=$(echo "$rf" | sed -n 's/^[[:space:]]*Active Band Class:[[:space:]]*\(.*\)$/\1/p' | head -1)
 earfcn=$(num "$(echo "$rf" | sed -n 's/^[[:space:]]*Active Channel:[[:space:]]*\(.*\)$/\1/p' | head -1)")
-pci=$(num "$($Q --nas-get-cell-location-info 2>/dev/null | tr -d "'" | sed -n 's/^[[:space:]]*Physical Cell ID: \(.*\)$/\1/p' | head -1)")
+# info sel: dipakai untuk PCI sel layan + daftar sel tetangga (PCI & RSRP)
+cli=$($Q --nas-get-cell-location-info 2>/dev/null | tr -d "'")
+pci=$(num "$(printf '%s\n' "$cli" | sed -n 's/^[[:space:]]*Physical Cell ID: \(.*\)$/\1/p' | head -1)")
+neigh=$(printf '%s\n' "$cli" | awk '
+	/Physical Cell ID:/ { p = $NF; next }
+	/RSRP:/ { if (p != "") { printf "%s%s (%s dBm)", (n++ ? ", " : ""), p, $2; p = "" } }')
 
 modem_rev=$($Q --dms-get-revision 2>/dev/null | sed -n "s/.*Revision: '\(.*\)'.*/\1/p" | head -1)
 mm=$(mmcli -m any 2>/dev/null)
@@ -111,6 +116,7 @@ echo "\"sinr\":\"${sinr:--}\","
 echo "\"pband\":\"$(bandlabel "$band")\","
 echo "\"earfcn\":\"${earfcn:--}\","
 echo "\"pci\":\"${pci:--}\","
+echo "\"neighbors\":\"$(j "${neigh:--}")\","
 echo "\"cid_dec\":\"${cid:--}\","
 echo "\"cid_hex\":\"$(hexof "$cid")\","
 echo "\"tac_d\":\"${tac:--}\","

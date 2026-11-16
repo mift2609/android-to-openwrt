@@ -56,6 +56,7 @@ cmd_status() {
 	ps=$(echo "$serv" | sed -n 's/^[[:space:]]*PS:[[:space:]]*\(.*\)$/\1/p' | head -1)
 	echo "apn=$(uci -q get rolexlte.main.apn)"
 	echo "ipfam=$(uci -q get rolexlte.main.ipfam)"
+	echo "refresh=$(uci -q get rolexlte.main.refresh)"
 	echo "profile=$(uci -q get rolexlte.main.profile)"
 	echo "$sig"
 	echo "network=$net"
@@ -98,6 +99,11 @@ apn)
 	;;
 apn-user) uci set rolexlte.main.username="$2"; uci commit rolexlte; say "username APN: $2" ;;
 apn-pass) uci set rolexlte.main.password="$2"; uci commit rolexlte; say "password APN diset" ;;
+refresh)
+	case "$2" in
+		''|*[!0-9]*) say "nilai harus angka detik (0 = mati)"; exit 1 ;;
+		*) uci set rolexlte.main.refresh="$2"; uci commit rolexlte; say "auto refresh: ${2} detik" ;;
+	esac ;;
 ipfam)
 	case "$2" in ipv4|ipv6|ipv4v6) uci set rolexlte.main.ipfam="$2"; uci commit rolexlte; say "ipfam: $2"; /etc/init.d/rolex-lte restart >/dev/null 2>&1;; *) say "nilai ipfam harus ipv4|ipv6|ipv4v6"; exit 1;; esac ;;
 profile) uci set rolexlte.main.profile="$2"; uci commit rolexlte; say "profile: $2" ;;
@@ -124,7 +130,7 @@ reboot|modem-reboot)
 	;;
 luci-path) say "LuCI: Services -> Modem LTE  (/cgi-bin/luci/admin/services/rolexmodem)" ;;
 *) cat <<EOF
-pakai: $0 status|signal|bands|apn <apn>|apn-user <u>|apn-pass <p>|ipfam <v>|profile <p>|band <daftar|auto>|reboot
+pakai: $0 status|signal|bands|apn <apn>|apn-user <u>|apn-pass <p>|ipfam <v>|refresh <detik>|profile <p>|band <daftar|auto>|reboot
 EOF
 	exit 1 ;;
 esac

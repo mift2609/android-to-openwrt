@@ -136,9 +136,9 @@ return view.extend({
 		var bandsCur = bandsFrom(block, 'current');
 		var bandsSup = bandsFrom(block, 'supported');
 
-		function signalQuality() {
-			var rsrp = parseFloat(d.RSRP);
-			if (isNaN(rsrp)) return '—';
+		function signalQuality(dd) {
+			var rsrp = parseFloat(dd.RSRP);
+			if (isNaN(rsrp)) return '\u2014';
 			if (rsrp > -80) return _('sangat baik');
 			if (rsrp > -90) return _('baik');
 			if (rsrp > -100) return _('cukup');
@@ -146,44 +146,55 @@ return view.extend({
 			return _('sangat lemah');
 		}
 
-		// Satu tabel info saja: modem + jaringan + SIM + sinyal (dulu terpisah 3 tabel -> dobel).
-		// Nilai dari /usr/bin/rolex-3ginfo-json (QMI) + rolex-modem-ctl status.
+		// Baris tabel "Informasi Modem dan Jaringan" — dipakai saat render awal maupun saat
+		// auto refresh (hanya tabel ini yang dibangun ulang, jadi isian lain tak terganggu).
 		function mm(v) { return v ? v + ' dBm' : '\u2014'; }
-		var infoRows = [
-			row(_('Kekuatan sinyal'), signalBar(g.signal)),
-			row(_('Operator'), val(g.operator_name) + (g.operator_mcc ? ' (' + g.operator_mcc + '/' + g.operator_mnc + ')' : '')),
-			row(_('Status SIM'), g.imsi ? _('siap (IMSI terbaca)') : '\u2014'),
-			row(_('Teknologi / registrasi'), val(g.mode) + ' / ' + val(g.registration)),
-			row(_('Layanan LTE / PS'), val(d.lte_service) + ' / ' + val(d.ps)),
-			row(_('APN'), E('strong', {}, d.apn || '\u2014')),
-			row(_('IP / gateway'), val(d.ip) + (d.gateway ? ' (gw ' + d.gateway + ')' : '')),
-			row(_('IP modem / internet'), val(d.io)),
-			row(_('Sinyal'), _('RSRP ') + mm(g.rsrp) + ' / ' + _('RSRQ ') + (val(g.rsrq) === '\u2014' ? '\u2014' : g.rsrq + ' dB') +
-				' / ' + _('SINR ') + (val(g.sinr) === '\u2014' ? '\u2014' : g.sinr + ' dB') +
-				(d.RSRP ? '  (' + signalQuality() + ')' : '')),
-			row(_('RSSI / CSQ'), (val(g.rssi) === '\u2014' ? '\u2014' : g.rssi + ' dBm') + ' / ' + val(g.csq)),
-			row(_('Pita / PCI / EARFCN'), val(g.pband) + '  \u2014 PCI ' + val(g.pci) + ', EARFCN ' + val(g.earfcn), 'important'),
-			row(_('Cell ID / TAC / LAC'), val(g.cid_dec) + (g.cid_hex ? ' (' + g.cid_hex + ')' : '') + ' / ' + val(g.tac_dec) + ' / ' + val(g.lac_dec)),
-			row(_('Statistik koneksi'), val(g.conn_time) + (g.rx ? '  \u2014 rx ' + g.rx + ' / tx ' + g.tx : '')),
-			row(_('Tipe modem'), val(g.modem)),
-			row(_('Firmware'), val(g.firmware)),
-			row(_('IMEI / IMSI'), val(g.imei) + ' / ' + val(g.imsi)),
-			row(_('ICCID'), val(g.iccid)),
-			row(_('Suhu modem'), g.mtemp ? g.mtemp + ' \u00b0C' : '\u2014'),
-			row(_('ModemManager'), val(d.mm_state)),
-			row(_('Band prefs sekarang'), splitBands(bandsCur).map(bandLabel).join(', ') || '\u2014'),
-			row(_('Band didukung'), splitBands(bandsSup).map(bandLabel).join(', ') || '\u2014')
-		];
-		if (!d.RSRP && !d.RSSI && !g.rsrp) {
-			infoRows.unshift(E('tr', { 'class': 'tr' }, [
-				E('td', { 'class': 'td left', 'colspan': '2' }, [
-					E('strong', {}, _('Modem belum siap: nilai sinyal belum bisa dibaca.')),
-					E('br'),
-					_('Biasanya 1–2 menit setelah boot (mencari jaringan). Tunggu lalu tekan Segarkan, ' +
-					  'atau jalankan /usr/bin/rolex-watchdog di System → Terminal.')
-				])
-			]));
+		function rowsFrom(dd, gg, cur, sup) {
+			var rows = [
+				row(_('Kekuatan sinyal'), signalBar(gg.signal)),
+				row(_('Operator'), val(gg.operator_name) + (gg.operator_mcc ? ' (' + gg.operator_mcc + '/' + gg.operator_mnc + ')' : '')),
+				row(_('Status SIM'), gg.imsi ? _('siap (IMSI terbaca)') : '\u2014'),
+				row(_('Teknologi / registrasi'), val(gg.mode) + ' / ' + val(gg.registration)),
+				row(_('Layanan LTE / PS'), val(dd.lte_service) + ' / ' + val(dd.ps)),
+				row(_('APN'), E('strong', {}, dd.apn || '\u2014')),
+				row(_('IP / gateway'), val(dd.ip) + (dd.gateway ? ' (gw ' + dd.gateway + ')' : '')),
+				row(_('IP modem / internet'), val(dd.io)),
+				row(_('Sinyal'), _('RSRP ') + mm(gg.rsrp) + ' / ' + _('RSRQ ') + (val(gg.rsrq) === '\u2014' ? '\u2014' : gg.rsrq + ' dB') +
+					' / ' + _('SINR ') + (val(gg.sinr) === '\u2014' ? '\u2014' : gg.sinr + ' dB') +
+					(dd.RSRP ? '  (' + signalQuality(dd) + ')' : '')),
+				row(_('RSSI / CSQ'), (val(gg.rssi) === '\u2014' ? '\u2014' : gg.rssi + ' dBm') + ' / ' + val(gg.csq)),
+				row(_('Pita / PCI / EARFCN'), val(gg.pband) + '  \u2014 PCI ' + val(gg.pci) + ', EARFCN ' + val(gg.earfcn), 'important'),
+				row(_('PCI tetangga'), val(gg.neighbors) + (gg.neighbors && gg.neighbors !== '\u2014' ? '  ' + _('(sel layan = baris pertama)') : '')),
+				row(_('Cell ID / TAC / LAC'), val(gg.cid_dec) + (gg.cid_hex ? ' (' + gg.cid_hex + ')' : '') + ' / ' + val(gg.tac_dec) + ' / ' + val(gg.lac_dec)),
+				row(_('Statistik koneksi'), val(gg.conn_time) + (gg.rx ? '  \u2014 rx ' + gg.rx + ' / tx ' + gg.tx : '')),
+				row(_('Tipe modem'), val(gg.modem)),
+				row(_('Firmware'), val(gg.firmware)),
+				row(_('IMEI / IMSI'), val(gg.imei) + ' / ' + val(gg.imsi)),
+				row(_('ICCID'), val(gg.iccid)),
+				row(_('Suhu modem'), gg.mtemp ? gg.mtemp + ' \u00b0C' : '\u2014'),
+				row(_('ModemManager'), val(dd.mm_state)),
+				row(_('Band prefs sekarang'), splitBands(cur).map(bandLabel).join(', ') || '\u2014'),
+				row(_('Band didukung'), splitBands(sup).map(bandLabel).join(', ') || '\u2014')
+			];
+			if (!dd.RSRP && !dd.RSSI && !gg.rsrp) {
+				rows.unshift(E('tr', { 'class': 'tr' }, [
+					E('td', { 'class': 'td left', 'colspan': '2' }, [
+						E('strong', {}, _('Modem belum siap: nilai sinyal belum bisa dibaca.')),
+						E('br'),
+						_('Biasanya 1–2 menit setelah boot (mencari jaringan). Tunggu lalu tekan Segarkan, ' +
+						  'atau jalankan /usr/bin/rolex-watchdog di System → Terminal.')
+					])
+				]));
+			}
+			return rows;
 		}
+
+		var infoTable = E('table', { 'class': 'table' }, rowsFrom(d, g, bandsCur, bandsSup));
+		var refreshIn = E('input', {
+			'class': 'cbi-input-text', 'type': 'number', 'min': '0', 'step': '5',
+			'style': 'width:6em', 'value': d.refresh || '0'
+		});
+		var lastRefresh = E('span', { 'class': 'cbi-value-description' }, '');
 
 		var apnInput = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': d.apn || '' });
 		var famSelect = E('select', { 'class': 'cbi-input-select' },
@@ -347,8 +358,23 @@ return view.extend({
 				E('h3', {}, _('Informasi Modem dan Jaringan')),
 				E('p', { 'class': 'cbi-value-description' },
 					_('Dibaca lewat QMI (qmicli/ModemManager) — modem ini tidak melayani perintah AT.')),
-				E('table', { 'class': 'table' }, infoRows),
-				E('button', { 'class': 'btn cbi-button', 'click': function () { location.reload(); } }, _('Segarkan'))
+				infoTable,
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Auto refresh (detik)')),
+					E('div', { 'class': 'cbi-value-field' }, [
+						refreshIn, ' ',
+						E('button', {
+							'class': 'btn cbi-button cbi-button-apply',
+							'click': function () { act([ 'refresh', String(parseInt(refreshIn.value, 10) || 0) ], _('Simpan auto refresh')); }
+						}, _('Simpan')),
+						' ',
+						E('button', { 'class': 'btn cbi-button', 'click': function () { location.reload(); } }, _('Segarkan')),
+						' ', lastRefresh,
+						E('br'),
+						E('span', { 'class': 'cbi-value-description' },
+							_('0 = mati. Hanya tabel ini yang diperbarui otomatis (isian APN/band Anda tidak terganggu).'))
+					])
+				])
 			]),
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Pengaturan')),
@@ -430,6 +456,26 @@ return view.extend({
 			}, t[1]);
 		});
 		showTab((location.hash || '').replace('#', ''));
+
+		// --- auto refresh (interval dari uci rolexlte.main.refresh) ---------------
+		var refreshSecs = parseInt(d.refresh, 10) || 0;
+		if (refreshSecs > 0) {
+			window.setInterval(function () {
+				Promise.all([
+					ctl([ 'status' ]),
+					fs.exec('/usr/bin/rolex-3ginfo-json', [])
+				]).then(function (r) {
+					var nd = kv(r[0] && r[0].stdout);
+					var ng = {};
+					try { ng = JSON.parse((r[1] && r[1].stdout) || '{}'); } catch (e) { ng = {}; }
+					var nblk = bandsBlock(r[0] && r[0].stdout);
+					var rows = rowsFrom(nd, ng, bandsFrom(nblk, 'current'), bandsFrom(nblk, 'supported'));
+					infoTable.replaceChildren.apply(infoTable, rows);
+					lastRefresh.textContent = _('diperbarui ') + new Date().toLocaleTimeString();
+				}).catch(function () { /* diamkan, coba lagi di siklus berikutnya */ });
+			}, refreshSecs * 1000);
+			lastRefresh.textContent = _('auto refresh tiap ') + refreshSecs + _(' detik');
+		}
 
 		return E('div', {}, [
 			E('h2', {}, _('Modem LTE')),
