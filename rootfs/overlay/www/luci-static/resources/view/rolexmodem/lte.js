@@ -134,19 +134,36 @@ return view.extend({
 			return _('sangat lemah');
 		}
 
-		// Tabel status: hanya hal-hal yang TIDAK ada di bagian "Informasi 4G / LTE" di bawah
-		// (sinyal/operator/sel/pita ada di sana supaya tidak tampil dobel).
-		var statusRows = [
-			row(_('APN'), E('strong', {}, d.apn || '—')),
-			row(_('Registrasi'), val(d.registration)),
-			row(_('Jaringan'), (d.network || '—').toUpperCase()),
-			row(_('PS (data)'), d.ps),
-			row(_('IP modem / internet'), d.io),
-			row(_('Layanan LTE'), d.lte_service),
-			row(_('ModemManager'), d.mm_state)
+		// Satu tabel info saja: modem + jaringan + SIM + sinyal (dulu terpisah 3 tabel -> dobel).
+		// Nilai dari /usr/bin/rolex-3ginfo-json (QMI) + rolex-modem-ctl status.
+		function mm(v) { return v ? v + ' dBm' : '\u2014'; }
+		var infoRows = [
+			row(_('Kekuatan sinyal'), signalBar(g.signal)),
+			row(_('Operator'), val(g.operator_name) + (g.operator_mcc ? ' (' + g.operator_mcc + '/' + g.operator_mnc + ')' : '')),
+			row(_('Status SIM'), g.imsi ? _('siap (IMSI terbaca)') : '\u2014'),
+			row(_('Teknologi / registrasi'), val(g.mode) + ' / ' + val(g.registration)),
+			row(_('Layanan LTE / PS'), val(d.lte_service) + ' / ' + val(d.ps)),
+			row(_('APN'), E('strong', {}, d.apn || '\u2014')),
+			row(_('IP / gateway'), val(d.ip) + (d.gateway ? ' (gw ' + d.gateway + ')' : '')),
+			row(_('IP modem / internet'), val(d.io)),
+			row(_('Sinyal'), _('RSRP ') + mm(g.rsrp) + ' / ' + _('RSRQ ') + (val(g.rsrq) === '\u2014' ? '\u2014' : g.rsrq + ' dB') +
+				' / ' + _('SINR ') + (val(g.sinr) === '\u2014' ? '\u2014' : g.sinr + ' dB') +
+				(d.RSRP ? '  (' + signalQuality() + ')' : '')),
+			row(_('RSSI / CSQ'), (val(g.rssi) === '\u2014' ? '\u2014' : g.rssi + ' dBm') + ' / ' + val(g.csq)),
+			row(_('Pita / PCI / EARFCN'), val(g.pband) + '  \u2014 PCI ' + val(g.pci) + ', EARFCN ' + val(g.earfcn), 'important'),
+			row(_('Cell ID / TAC / LAC'), val(g.cid_dec) + (g.cid_hex ? ' (' + g.cid_hex + ')' : '') + ' / ' + val(g.tac_dec) + ' / ' + val(g.lac_dec)),
+			row(_('Statistik koneksi'), val(g.conn_time) + (g.rx ? '  \u2014 rx ' + g.rx + ' / tx ' + g.tx : '')),
+			row(_('Tipe modem'), val(g.modem)),
+			row(_('Firmware'), val(g.firmware)),
+			row(_('IMEI / IMSI'), val(g.imei) + ' / ' + val(g.imsi)),
+			row(_('ICCID'), val(g.iccid)),
+			row(_('Suhu modem'), g.mtemp ? g.mtemp + ' \u00b0C' : '\u2014'),
+			row(_('ModemManager'), val(d.mm_state)),
+			row(_('Band prefs sekarang'), splitBands(bandsCur).map(bandLabel).join(', ') || '\u2014'),
+			row(_('Band didukung'), splitBands(bandsSup).map(bandLabel).join(', ') || '\u2014')
 		];
-		if (!d.RSRP && !d.RSSI) {
-			statusRows.unshift(E('tr', { 'class': 'tr' }, [
+		if (!d.RSRP && !d.RSSI && !g.rsrp) {
+			infoRows.unshift(E('tr', { 'class': 'tr' }, [
 				E('td', { 'class': 'td left', 'colspan': '2' }, [
 					E('strong', {}, _('Modem belum siap: nilai sinyal belum bisa dibaca.')),
 					E('br'),
@@ -155,7 +172,6 @@ return view.extend({
 				])
 			]));
 		}
-		var status = E('table', { 'class': 'table' }, statusRows);
 
 		var apnInput = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': d.apn || '' });
 		var famSelect = E('select', { 'class': 'cbi-input-select' },
@@ -278,49 +294,11 @@ return view.extend({
 		return E('div', {}, [
 			E('h2', {}, _('Modem LTE')),
 			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, _('Status')),
-				status,
-				E('button', { 'class': 'btn cbi-button', 'click': function () { location.reload(); } }, _('Segarkan'))
-			]),
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, _('Informasi 4G / LTE')),
+				E('h3', {}, _('Informasi Modem dan Jaringan')),
 				E('p', { 'class': 'cbi-value-description' },
-					_('Semua nilai di bawah dibaca lewat QMI (qmicli/ModemManager), bukan AT — di modem ini AT tidak menjawab.')),
-				E('h4', {}, _('Informasi Umum')),
-				E('table', { 'class': 'table' }, [
-					row(_('Kekuatan sinyal'), signalBar(g.signal)),
-					row(_('Operator'), val(g.operator_name) + (g.operator_mcc ? ' (' + g.operator_mcc + '/' + g.operator_mnc + ')' : '')),
-					row(_('Status SIM'), g.imsi ? _('siap (IMSI terbaca)') : '\u2014'),
-					row(_('Teknologi'), val(g.mode)),
-					row(_('Registrasi'), val(g.registration)),
-					row(_('Statistik koneksi'), val(g.conn_time) + (g.rx ? ' \u2014 rx ' + g.rx + ' / tx ' + g.tx : '')),
-					row(_('IP / gateway'), val(d.ip) + ' / ' + val(d.gateway)),
-					row(_('Channel'), val(d.channel)),
-					row(_('Band prefs sekarang'), splitBands(bandsCur).map(bandLabel).join(', ') || '—'),
-					row(_('Band didukung'), splitBands(bandsSup).map(bandLabel).join(', ') || '—')
-				]),
-				E('h4', {}, _('Informasi Modem')),
-				E('table', { 'class': 'table' }, [
-					row(_('Tipe modem'), val(g.modem)),
-					row(_('Firmware'), val(g.firmware)),
-					row(_('IMEI'), val(g.imei)),
-					row(_('IMSI'), val(g.imsi)),
-					row(_('ICCID'), val(g.iccid)),
-					row(_('Suhu modem'), g.mtemp ? g.mtemp + ' \u00b0C' : '\u2014'),
-					row(_('Port / protokol'), val(g.cport) + ' / ' + val(g.protocol))
-				]),
-				E('h4', {}, _('Sel & Sinyal')),
-				E('table', { 'class': 'table' }, [
-					row(_('Pita (band)'), val(g.pband) + (d.band && d.band !== 'unknown' ? '  \u2014 aktif: ' + bandLabel(d.band) : ''), 'important'),
-					row(_('PCI / EARFCN'), val(g.pci) + ' / ' + val(g.earfcn)),
-					row(_('Cell ID'), val(g.cid_dec) + (g.cid_hex ? ' (' + g.cid_hex + ')' : '')),
-					row(_('TAC / LAC'), val(g.tac_dec) + ' / ' + val(g.lac_dec)),
-					row(_('CSQ'), val(g.csq)),
-					row(_('RSSI'), val(g.rssi) + ' dBm'),
-					row(_('RSRP'), val(g.rsrp) + ' dBm'),
-					row(_('RSRQ'), val(g.rsrq) + ' dB'),
-					row(_('SINR'), val(g.sinr) + ' dB')
-				])
+					_('Dibaca lewat QMI (qmicli/ModemManager) — modem ini tidak melayani perintah AT.')),
+				E('table', { 'class': 'table' }, infoRows),
+				E('button', { 'class': 'btn cbi-button', 'click': function () { location.reload(); } }, _('Segarkan'))
 			]),
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Pengaturan')),
