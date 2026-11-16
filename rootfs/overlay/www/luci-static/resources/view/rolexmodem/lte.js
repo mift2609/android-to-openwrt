@@ -85,6 +85,13 @@ function row(label, value, cls) {
 	]);
 }
 
+// Aksi SMS: semuanya lewat /usr/bin/rolex-sms-ctl (QMI/ModemManager).
+function smsAct(args) {
+	return fs.exec('/usr/bin/rolex-sms-ctl', args).then(function (r) {
+		return ((r && r.stdout) || '') + ((r && r.stderr) || '');
+	});
+}
+
 // Bar sinyal sederhana (persen dari QMI) — halaman ala "4G Connection".
 function signalBar(pct) {
 	var p = parseInt(pct, 10);
@@ -111,7 +118,8 @@ return view.extend({
 		// (pengganti halaman 3ginfo-lite — app itu butuh AT yang di modem ini tidak menjawab)
 		return Promise.all([
 			ctl(['status']),
-			fs.exec('/usr/bin/rolex-3ginfo-json', [])
+			fs.exec('/usr/bin/rolex-3ginfo-json', []),
+			fs.exec('/usr/bin/rolex-sms-ctl', [ 'list' ]).catch(function () { return { stdout: '' }; })
 		]);
 	},
 
@@ -121,6 +129,10 @@ return view.extend({
 		var block = bandsBlock(st.stdout);
 		var g = {};
 		try { g = JSON.parse((res && res[1] && res[1].stdout) || '{}'); } catch (e) { g = {}; }
+		var sms = ((res && res[2] && res[2].stdout) || '').split('\n').map(function (l) {
+			var m = /^id=(\d+)\s+state=(\S+)/.exec(l.trim());
+			return m ? { id: m[1], state: m[2] } : null;
+		}).filter(function (x) { return x; });
 		var bandsCur = bandsFrom(block, 'current');
 		var bandsSup = bandsFrom(block, 'supported');
 
@@ -291,8 +303,46 @@ return view.extend({
 			])
 		]);
 
-		return E('div', {}, [
-			E('h2', {}, _('Modem LTE')),
+		// --- SMS: widget + aksi lewat /usr/bin/rolex-sms-ctl (QMI/ModemManager) --------
+		function bacaSms(id) {
+			smsAct([ 'read', id ]).then(function (out) {
+				var m = {};
+				(out || '').split('\n').forEach(function (l) {
+					var i = l.indexOf('=');
+					if (i > 0) m[l.slice(0, i).trim()] = l.slice(i + 1).trim();
+				});
+				ui.showModal(_('SMS ') + id, [
+					E('p', {}, [ E('strong', {}, _('Dari: ')), m.number || '\u2014' ]),
+					E('p', {}, [ E('strong', {}, _('Waktu: ')), m.timestamp || '\u2014' ]),
+					E('pre', { 'style': 'white-space:pre-wrap; margin:8px 0' }, m.text || '\u2014'),
+					E('div', { 'class': 'right' }, [
+						E('button', { 'class': 'btn', 'click': function () { ui.hideModal(); } }, _('Tutup'))
+					])
+				]);
+			});
+		}
+		function hapusSms(id) {
+			if (!confirm(_('Hapus SMS ') + id + '?')) return;
+			smsAct([ 'delete', id ]).then(function () { location.reload(); });
+		}
+		var smsNum = E('input', { 'class': 'cbi-input-text', 'placeholder': '+62812xxxxxxx' });
+		var smsTxt = E('input', { 'class': 'cbi-input-text', 'placeholder': _('Isi SMS') });
+		var smsRows = sms.map(function (m) {
+			return E('tr', { 'class': 'tr' }, [
+				E('td', { 'class': 'td left' }, m.id),
+				E('td', { 'class': 'td left' }, m.state),
+				E('td', { 'class': 'td left' }, [
+					E('button', { 'class': 'btn cbi-button', 'click': function () { bacaSms(m.id); } }, _('Baca')),
+					' ',
+					E('button', { 'class': 'btn cbi-button cbi-button-reset', 'click': function () { hapusSms(m.id); } }, _('Hapus'))
+				])
+			]);
+		});
+		if (!smsRows.length)
+			smsRows = [ E('tr', { 'class': 'tr' }, E('td', { 'class': 'td left', 'colspan': '3' }, _('Tidak ada SMS.'))) ];
+
+		// --- isi tiap tab ------------------------------------------------------
+		var modemSection = E('div', {}, [
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Informasi Modem dan Jaringan')),
 				E('p', { 'class': 'cbi-value-description' },
@@ -311,6 +361,80 @@ return view.extend({
 					E('a', { 'href': L.env.cgi_base + '/admin/network/wireless' }, _('Network → Wireless'))
 				])
 			])
+		]);
+
+		var smsSection = E('div', {}, [
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, _('Pesan')),
+				E('table', { 'class': 'table' }, [
+					E('tr', { 'class': 'tr' }, [
+						E('th', { 'class': 'th' }, _('ID')),
+						E('th', { 'class': 'th' }, _('Status')),
+						E('th', { 'class': 'th' }, _('Aksi'))
+					])
+				].concat(smsRows))
+			]),
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, _('Kirim SMS')),
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Nomor')),
+					E('div', { 'class': 'cbi-value-field' }, smsNum)
+				]),
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Isi')),
+					E('div', { 'class': 'cbi-value-field' }, smsTxt)
+				]),
+				E('button', {
+					'class': 'btn cbi-button cbi-button-apply',
+					'click': function () {
+						if (!smsNum.value || !smsTxt.value) {
+							ui.addNotification(null, E('p', {}, _('Nomor dan isi harus diisi.')), 'error');
+							return;
+						}
+						smsAct([ 'send', smsNum.value, smsTxt.value ]).then(function (out) {
+							ui.addNotification(null, E('p', {}, out.trim() || _('terkirim')), 'info');
+							smsNum.value = ''; smsTxt.value = '';
+						});
+					}
+				}, _('Kirim')),
+				' ',
+				E('button', { 'class': 'btn cbi-button', 'click': function () { location.reload(); } }, _('Segarkan')),
+				' ',
+				E('button', {
+					'class': 'btn cbi-button cbi-button-reset',
+					'click': function () { if (confirm(_('Hapus semua SMS?'))) smsAct([ 'delete-all' ]).then(function () { location.reload(); }); }
+				}, _('Hapus semua'))
+			]),
+			E('p', { 'class': 'cbi-value-description' },
+				_('SMS dibaca/dikirim lewat QMI (ModemManager), bukan AT.'))
+		]);
+
+		// --- tab: Modem | SMS --------------------------------------------------
+		var smsCount = sms.length ? ' (' + sms.length + ')' : '';
+		var pane = E('div', {});
+		var tabs = {};
+		function showTab(which) {
+			which = (which === 'sms') ? 'sms' : 'modem';
+			if (pane.firstChild) pane.removeChild(pane.firstChild);
+			pane.appendChild(which === 'sms' ? smsSection : modemSection);
+			[ 'modem', 'sms' ].forEach(function (k) {
+				if (tabs[k]) tabs[k].setAttribute('class', 'cbi-tab' + (k === which ? ' cbi-tab-active' : ''));
+			});
+			if (location.hash !== '#' + which) history.replaceState(null, '', '#' + which);
+		}
+		[ [ 'modem', _('Modem') ], [ 'sms', _('SMS') + smsCount ] ].forEach(function (t) {
+			tabs[t[0]] = E('li', {
+				'class': 'cbi-tab',
+				'style': 'cursor:pointer',
+				'click': function () { showTab(t[0]); }
+			}, t[1]);
+		});
+		showTab((location.hash || '').replace('#', ''));
+
+		return E('div', {}, [
+			E('h2', {}, _('Modem LTE')),
+			E('ul', { 'class': 'cbi-tabmenu' }, [ tabs.modem, tabs.sms ]),
+			pane
 		]);
 	},
 

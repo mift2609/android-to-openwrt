@@ -8,6 +8,9 @@
 				],
 				"/usr/bin/rolex-3ginfo-json": [
 					"exec"
+				],
+				"/usr/bin/rolex-sms-ctl": [
+					"exec"
 				]
 			},
 			"ubus": {
@@ -19,6 +22,9 @@
 		"write": {
 			"file": {
 				"/usr/bin/rolex-modem-ctl": [
+					"exec"
+				],
+				"/usr/bin/rolex-sms-ctl": [
 					"exec"
 				]
 			},
