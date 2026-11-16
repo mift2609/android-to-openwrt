@@ -62,6 +62,7 @@ cmd_status() {
 	echo "rotate_mins=$(uci -q get rolexlte.main.rotate_mins)"
 	echo "restart_after=$(uci -q get rolexlte.main.restart_after)"
 	echo "ping_target=$(uci -q get rolexlte.main.ping_target)"
+	echo "reboot_after_mss=$(uci -q get rolexlte.main.reboot_after_mss)"
 	echo "profile=$(uci -q get rolexlte.main.profile)"
 	echo "$sig"
 	echo "network=$net"
@@ -104,6 +105,11 @@ apn)
 	;;
 apn-user) uci set rolexlte.main.username="$2"; uci commit rolexlte; say "username APN: $2" ;;
 apn-pass) uci set rolexlte.main.password="$2"; uci commit rolexlte; say "password APN diset" ;;
+rebootpolicy)
+	case "$2" in ''|*[!0-9]*) say "pakai: rebootpolicy <jumlah|0>"; exit 1 ;; esac
+	uci set rolexlte.main.reboot_after_mss="$2"; uci commit rolexlte
+	say "reboot perangkat setelah $2 kali restart modem (0 = jangan pernah)"
+	;;
 lte-restart)
 	/etc/init.d/rolex-lte restart >/dev/null 2>&1
 	say "sesi LTE diulang — IP baru muncul 30-90 detik lagi"

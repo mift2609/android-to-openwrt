@@ -14,3 +14,5 @@ config rolexlte 'main'
 	option rotate_mins '0'
 	# Restart modem MSS hanya setelah sesi diulang N kali tetap tanpa internet
 	option restart_after '3'
+	# Usaha terakhir: reboot perangkat setelah N kali restart MSS tetap tanpa data (0 = jangan)
+	option reboot_after_mss '2'

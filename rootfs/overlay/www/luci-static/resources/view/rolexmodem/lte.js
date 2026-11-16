@@ -211,6 +211,7 @@ return view.extend({
 		var guardRotate = E('input', { 'class': 'cbi-input-text', 'value': d.rotate_mins || '0' });
 		var guardRestart = E('input', { 'class': 'cbi-input-text', 'value': d.restart_after || '2' });
 		var guardTarget = E('input', { 'class': 'cbi-input-text', 'value': d.ping_target || '8.8.8.8' });
+		var guardReboot = E('input', { 'class': 'cbi-input-text', 'value': d.reboot_after_mss || '2' });
 
 		var apnInput = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': d.apn || '' });
 		var famSelect = E('select', { 'class': 'cbi-input-select' },
@@ -409,6 +410,18 @@ return view.extend({
 				E('div', { 'class': 'cbi-value' }, [
 					E('label', { 'class': 'cbi-value-title' }, _('Alamat yang di-ping')),
 					E('div', { 'class': 'cbi-value-field' }, guardTarget)
+				]),
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Reboot perangkat setelah N restart modem')),
+					E('div', { 'class': 'cbi-value-field' }, [ guardReboot, ' ',
+						E('button', {
+							'class': 'btn cbi-button cbi-button-apply',
+							'click': function () { act([ 'rebootpolicy', String(parseInt(guardReboot.value, 10) || 0) ], _('Simpan kebijakan reboot')); }
+						}, _('Simpan')),
+						' ',
+						E('span', { 'class': 'cbi-value-description' },
+							_('Usaha terakhir kalau modem tetap bengong (0 = jangan pernah).'))
+					])
 				]),
 				E('button', {
 					'class': 'btn cbi-button cbi-button-apply',

@@ -35,6 +35,10 @@ FAILS=$(_uci check_fails); [ -n "$FAILS" ] || FAILS=3
 ROTATE=$(_uci rotate_mins); [ -n "$ROTATE" ] || ROTATE=0
 RESTART_AFTER=$(_uci restart_after); [ -n "$RESTART_AFTER" ] || RESTART_AFTER=3
 GRACE=$(_uci grace_secs); [ -n "$GRACE" ] || GRACE=60
+# Usaha terakhir: kalau beberapa restart MSS berturut-turut tetap tanpa data (gejala nyata:
+# terdaftar + IP ada tetapi paket tidak lewat), reboot perangkat adalah satu-satunya pemulihan
+# yang terbukti. 0 = jangan pernah.
+REBOOT_AFTER_MSS=$(_uci reboot_after_mss); [ -n "$REBOOT_AFTER_MSS" ] || REBOOT_AFTER_MSS=2
 # target ping bisa diganti lewat env (untuk menguji sendiri, mis. PING_TARGET=10.255.255.1)
 _pt=$(_uci ping_target); [ -n "$_pt" ] && PING_TARGET=$_pt
 PING_TARGET=${PING_TARGET:-8.8.8.8}
@@ -193,7 +197,7 @@ if ! wait_register; then
 	wait_register || log "tetap belum terdaftar, tetap coba data"
 fi
 
-bad=0
+bad=0; mss_count=0
 while :; do
 	$Q -d qrtr://0 --dpm-open-port="hw-data-ep-type=bam-dmux,hw-data-ep-iface-number=0,hw-data-rx-id=1,hw-data-tx-id=1" >/dev/null 2>&1
 	sleep 2
@@ -225,7 +229,7 @@ while :; do
 			continue
 		fi
 		# ada jawaban: sesi sehat
-		bf=0; bad=0
+		bf=0; bad=0; mss_count=0
 		if [ "$ROTATE" -gt 0 ] 2>/dev/null; then
 			now=$(cut -d. -f1 /proc/uptime)
 			if [ $((now - rot_since)) -ge $((ROTATE * 60)) ]; then
@@ -241,6 +245,11 @@ while :; do
 	if [ "${bad:-0}" -ge "$RESTART_AFTER" ]; then
 		log "sesi diulang $bad kali berturut-turut tanpa internet -> restart modem MSS"
 		modem_restart; ssp_auto; bad=0; bf=0
+		mss_count=$(( ${mss_count:-0} + 1 ))
+		if [ "$REBOOT_AFTER_MSS" -gt 0 ] 2>/dev/null && [ "$mss_count" -ge "$REBOOT_AFTER_MSS" ]; then
+			log "setelah $mss_count restart MSS tetap tanpa data -> reboot perangkat"
+			sync; sleep 3; reboot
+		fi
 		# beri modem waktu bangun & mendaftar dulu; tanpa jeda ini restart bisa beruntun
 		log "menunggu ${GRACE:-60}s setelah restart modem (biar modem sempat mendaftar)"; sleep ${GRACE:-60}
 	fi
