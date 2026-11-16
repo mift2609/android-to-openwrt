@@ -3,16 +3,17 @@
 'require fs';
 'require ui';
 
-// Halaman Wireless untuk rolex. Halaman bawaan LuCI membaca keadaan radio dari netifd, dan di
-// perangkat ini netifd/wpad tidak bisa memegang AP (driver wcn36xx) -> selalu tertulis
-// "Device is not active / Wireless is disabled" walau AP hidup. Halaman ini membaca keadaan
-// sebenarnya (rolex-wifi-ctl status) dan menyimpan setelan lewat skrip yang sama, yang menulis
-// uci + menjalankan ulang hostapd.
+// Halaman Network -> Wireless untuk rolex.
+// Bentuknya meniru "Wireless Overview" bawaan LuCI (radio + SSID + Associated Stations), tetapi
+// membaca keadaan SEBENARNYA dari perangkat (iw / rolex-wifi-ctl), bukan dari netifd — sebab di
+// driver wcn36xx netifd tidak pernah berhasil memegang AP, sehingga halaman bawaan selalu menulis
+// "Device is not active / Wireless is disabled" padahal AP hidup dan melayani klien.
 return view.extend({
 	load: function () {
-		return fs.exec('/usr/bin/rolex-wifi-ctl', [ 'status' ]).catch(function () {
-			return { stdout: '' };
-		});
+		return Promise.all([
+			fs.exec('/usr/bin/rolex-wifi-ctl', [ 'status' ]).catch(function () { return { stdout: '' }; }),
+			fs.exec('/sbin/iw', [ 'dev', 'wlan0', 'station', 'dump' ]).catch(function () { return { stdout: '' }; })
+		]);
 	},
 
 	pakai: function (nilai) {
@@ -26,48 +27,107 @@ return view.extend({
 
 		var jalankan = function (i) {
 			if (i >= urut.length) return Promise.resolve();
-			return fs.exec('/usr/bin/rolex-wifi-ctl', urut[i]).then(function () {
-				return jalankan(i + 1);
-			});
+			return fs.exec('/usr/bin/rolex-wifi-ctl', urut[i]).then(function () { return jalankan(i + 1); });
 		};
 
 		return jalankan(0).then(function () {
-			ui.addNotification(null, E('p', {}, _('Setelan dikirim. AP menjalankan ulang beberapa detik lagi.')), 'info');
-			return new Promise(function (r) { setTimeout(r, 15000); });  // AP butuh ~10-14 s untuk naik ulang
+			ui.addNotification(null, E('p', {}, _('Setelan dikirim — AP menjalankan ulang dalam beberapa detik.')), 'info');
+			return new Promise(function (r) { setTimeout(r, 15000); });
 		}).then(function () {
-			return self.load().then(function (res) { return self.tampilkan(res, true); });
+			return self.load().then(function (res) { return self.tampilkan(res); });
 		});
 	},
 
-	tampilkan: function (res, gantiSaja) {
+	tampilkan: function (res) {
 		var kv = {};
-		String((res && res.stdout) || '').split('\n').forEach(function (l) {
+		String((res && res[0] && res[0].stdout) || '').split('\n').forEach(function (l) {
 			var i = l.indexOf('=');
 			if (i > 0) kv[l.slice(0, i).trim()] = l.slice(i + 1);
 		});
+
+		// daftar klien dari 'iw dev wlan0 station dump'
+		var klien = [];
+		String((res && res[1] && res[1].stdout) || '').split('Station ').slice(1).forEach(function (b) {
+			klien.push({
+				mac: b.split(' ')[0],
+				sinyal: (b.match(/signal:\s*(-?[0-9]+)/) || [])[1] || '',
+				rx: (b.match(/rx bytes:\s*([0-9]+)/) || [])[1] || '',
+				tx: (b.match(/tx bytes:\s*([0-9]+)/) || [])[1] || ''
+			});
+		});
+
+		var jalan = kv.ap_state === 'jalan';
 		var nilai = function (v) { return (v === undefined || v === null || v === '') ? '—' : v; };
-		var baris = function (k, v, kuat) {
-			return E('tr', { 'class': 'tr' }, [
-				E('td', { 'class': 'td left', 'width': '33%' }, k),
-				E('td', { 'class': 'td left' }, kuat ? E('strong', {}, nilai(v)) : nilai(v))
-			]);
+		var kib = function (b) {
+			if (!b) return '—';
+			var n = parseInt(b, 10) / 1024;
+			return n > 1024 ? (n / 1024).toFixed(1) + ' MiB' : n.toFixed(1) + ' KiB';
 		};
 
-		var isi = E('div', [
-			E('h3', {}, _('Keadaan AP sebenarnya')),
+		var radio = E('div', { 'class': 'cbi-section' }, [
+			E('h2', {}, _('Wireless Overview')),
 			E('table', { 'class': 'table' }, [
-				baris(_('Status AP'), kv.ap_state === 'jalan' ? _('jalan') : nilai(kv.ap_state), true),
-				baris(_('SSID'), kv.ssid, true),
-				baris(_('Channel'), kv.channel),
-				baris(_('IP router WiFi'), nilai(kv.ip)),
-				baris(_('Klien terhubung'), nilai(kv.clients)),
-				baris(_('Sandi'), kv.key === 'tersimpan' ? _('tersimpan') : _('terbuka'))
-			]),
-			E('p', { 'class': 'cbi-value-description' },
-				_('Halaman bawaan LuCI membaca radio dari netifd, sedangkan di perangkat ini netifd ' +
-				  'tidak memegang AP (driver wcn36xx) — karena itu di sana tertulis "inactive/disabled" ' +
-				  'padahal WiFi hidup. Tabel di atas membaca keadaan sebenarnya. Setelan di bawah ' +
-				  'berlaku setelah AP dijalankan ulang (beberapa detik).')),
+				E('tr', { 'class': 'tr cbi-rowstyle-1' }, [
+					E('td', { 'class': 'td' }, [
+						E('strong', {}, 'radio0'),
+						E('div', { 'class': 'cbi-value-description' },
+							'Generic MAC80211 802.11b/g/n — ' + _('dijalankan hostapd manual (rolex-wifi)')),
+						E('div', {}, [
+							E('strong', { 'style': jalan ? 'color:#2e7d32' : 'color:#c62828' },
+								jalan ? _('aktif — memancar & melayani') : _('tidak berjalan')),
+							' · ' + _('channel') + ' ' + nilai(kv.channel),
+							' · ' + _('IP') + ' ' + nilai(kv.ip)
+						])
+					]),
+					E('td', { 'class': 'td right', 'style': 'white-space:nowrap' }, [
+						E('button', {
+							'class': 'btn cbi-button',
+							'click': ui.createHandlerFn(this, function () {
+								return fs.exec('/etc/init.d/rolex-wifi', [ 'restart' ]).then(function () {
+									ui.addNotification(null, E('p', {}, _('AP dijalankan ulang.')), 'info');
+								});
+							})
+						}, _('Restart'))
+					])
+				])
+			])
+		]);
+
+		var ssid = E('div', { 'class': 'cbi-section' }, [
+			E('table', { 'class': 'table' }, [
+				E('tr', { 'class': 'tr cbi-rowstyle-2' }, [
+					E('td', { 'class': 'td' }, [
+						E('strong', {}, _('SSID') + ': ' + nilai(kv.ssid)),
+						E('div', { 'class': 'cbi-value-description' },
+							_('Mode') + ': Master · ' +
+							(kv.encryption === 'none' || !kv.encryption ? _('terbuka') : 'WPA2-PSK') + ' · ' +
+							(klien.length ? (klien.length + ' ' + _('klien terhubung')) : _('belum ada klien')))
+					])
+				])
+			])
+		]);
+
+		var stations = E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, _('Associated Stations')),
+			E('table', { 'class': 'table' },
+				[ E('tr', { 'class': 'tr table-titles' }, [
+					E('th', { 'class': 'th' }, _('MAC address')),
+					E('th', { 'class': 'th' }, _('Signal')),
+					E('th', { 'class': 'th' }, _('RX / TX'))
+				]) ].concat(klien.length ? klien.map(function (k, i) {
+					return E('tr', { 'class': 'tr cbi-rowstyle-' + (i % 2 + 1) }, [
+						E('td', { 'class': 'td' }, k.mac),
+						E('td', { 'class': 'td' }, k.sinyal ? k.sinyal + ' dBm' : '—'),
+						E('td', { 'class': 'td' }, kib(k.rx) + ' / ' + kib(k.tx))
+					]);
+				}) : [
+					E('tr', { 'class': 'tr' }, [
+						E('td', { 'class': 'td', 'colspan': '3' }, E('em', {}, _('No information available')))
+					])
+				]))
+		]);
+
+		var ubah = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, _('Ubah setelan')),
 			E('div', { 'class': 'cbi-value' }, [
 				E('label', { 'class': 'cbi-value-title' }, _('SSID')),
@@ -76,7 +136,7 @@ return view.extend({
 				])
 			]),
 			E('div', { 'class': 'cbi-value' }, [
-				E('label', { 'class': 'cbi-value-title' }, _('Sandi (kosongkan = jangan diubah)')),
+				E('label', { 'class': 'cbi-value-title' }, _('Sandi baru (kosongkan = tetap)')),
 				E('div', { 'class': 'cbi-value-field' }, [
 					E('input', { 'type': 'text', 'id': 'rw-key', 'placeholder': _('biarkan kosong') })
 				])
@@ -97,7 +157,7 @@ return view.extend({
 				E('div', { 'class': 'cbi-value-field' }, [
 					E('select', { 'id': 'rw-ht' }, [
 						E('option', { 'value': 'HT20' }, _('HT20 (20 MHz)')),
-						E('option', { 'value': 'HT40' }, _('HT40 (40 MHz, channel 1-9 saja)'))
+						E('option', { 'value': 'HT40' }, _('HT40 (40 MHz, channel 1-9)'))
 					])
 				])
 			]),
@@ -113,14 +173,17 @@ return view.extend({
 						});
 					})
 				}, _('Simpan & jalankan ulang AP'))
-			])
+			]),
+			E('p', { 'class': 'cbi-value-description' },
+				_('Halaman bawaan LuCI membaca radio dari netifd; di perangkat ini netifd tidak bisa ' +
+				  'memegang AP (driver wcn36xx), sehingga di sana tertulis "inactive/disabled" padahal ' +
+				  'AP hidup. Semua nilai di halaman ini dibaca langsung dari perangkat.'))
 		]);
 
-		if (!gantiSaja) this.node = isi;
-		return isi;
+		return E([], [ radio, ssid, stations, ubah ]);
 	},
 
 	render: function (res) {
-		return this.tampilkan(res, false);
+		return this.tampilkan(res);
 	}
 });
