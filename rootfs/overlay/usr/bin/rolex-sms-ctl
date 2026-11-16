@@ -20,6 +20,13 @@ mm_aktif() {
 
 case "$1" in
 list)
+	# Hanya pesan yang benar-benar ada (received/sent/stored/sending). Entri "receiving"/"unknown"
+	# adalah slot kosong/draft yang ditahan ModemManager dan tak bisa dibaca/dihapus -> disembunyikan.
+	mmcli -m any --messaging-list-sms 2>/dev/null |
+		sed -n 's|.*/SMS/\([0-9]*\) (\(.*\))|id=\1 state=\2|p' |
+		grep -vE 'state=(receiving|unknown)$'
+	;;
+list-all)
 	mmcli -m any --messaging-list-sms 2>/dev/null |
 		sed -n 's|.*/SMS/\([0-9]*\) (\(.*\))|id=\1 state=\2|p'
 	;;
@@ -42,12 +49,16 @@ send)
 	;;
 delete)
 	[ -n "$2" ] || { echo "pakai: delete <id>"; exit 1; }
-	mmcli -s "$2" --delete >/dev/null 2>&1 && echo "SMS $2 dihapus"
+	# mmcli -s <id> --delete tidak jalan di MM 1.22 ("no actions specified"), pakai bentuk ini:
+	mmcli -m any --messaging-delete-sms="/org/freedesktop/ModemManager1/SMS/$2" 2>&1 | tail -1
 	;;
 delete-all)
 	ids=$(mmcli -m any --messaging-list-sms 2>/dev/null | sed -n 's|.*/SMS/\([0-9]*\).*|\1|p')
 	n=0
-	for id in $ids; do mmcli -s "$id" --delete >/dev/null 2>&1 && n=$((n + 1)); done
+	for id in $ids; do
+		mmcli -m any --messaging-delete-sms="/org/freedesktop/ModemManager1/SMS/$id" >/dev/null 2>&1 &&
+			n=$((n + 1))
+	done
 	echo "$n SMS dihapus"
 	;;
 status)
@@ -56,6 +67,6 @@ status)
 		sed 's/^[[:space:]]*|*[[:space:]]*//' | tr -d '\r'
 	;;
 *)
-	echo "pakai: $0 list|read <id>|send <nomor> <teks>|delete <id>|delete-all|status"
+	echo "pakai: $0 list|list-all|read <id>|send <nomor> <teks>|delete <id>|delete-all|status"
 	;;
 esac
