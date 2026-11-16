@@ -71,22 +71,24 @@ return view.extend({
 			return n > 1024 ? (n / 1024).toFixed(1) + ' MiB' : n.toFixed(1) + ' KiB';
 		};
 
+		// Susunan mengikuti halaman bawaan LuCI (lihat rolex vs mido): baris radio (nama, deskripsi,
+		// channel) + tombol, lalu baris jaringan (SSID/Mode/BSSID/Encryption), lalu Associated Stations.
 		var radio = E('div', { 'class': 'cbi-section' }, [
 			E('h2', {}, _('Wireless Overview')),
 			E('table', { 'class': 'table' }, [
+				E('tr', { 'class': 'tr table-titles' }, [
+					E('th', { 'class': 'th' }, 'radio0'),
+					E('th', { 'class': 'th right' }, '')
+				]),
 				E('tr', { 'class': 'tr cbi-rowstyle-1' }, [
 					E('td', { 'class': 'td' }, [
-						E('strong', {}, 'radio0'),
-						E('div', { 'class': 'cbi-value-description' },
-							'Generic MAC80211 802.11b/g/n — ' + _('dijalankan hostapd manual (rolex-wifi)')),
-						E('div', {}, [
-							E('strong', { 'style': jalan ? 'color:#2e7d32' : 'color:#c62828' },
-								jalan ? _('aktif — memancar & melayani') : _('tidak berjalan')),
-							' · ' + _('Channel') + ' ' + nilai(labelKanal),
-							' · ' + _('IP') + ' ' + nilai(kv.ip)
-						])
+						E('em', {}, 'Generic MAC80211 802.11b/g/n'),
+						E('br'),
+						_('Channel') + ' ' + nilai(labelKanal),
+						E('br'),
+						_('Bitrate') + ' ? Mbit/s'
 					]),
-					E('td', { 'class': 'td right', 'style': 'white-space:nowrap' }, [
+					E('td', { 'class': 'td right', 'style': 'white-space:nowrap;vertical-align:top' }, [
 						E('button', {
 							'class': 'btn cbi-button',
 							'click': ui.createHandlerFn(this, function () {
@@ -96,24 +98,40 @@ return view.extend({
 							})
 						}, _('Restart'))
 					])
-				])
-			])
-		]);
-
-		var ssid = E('div', { 'class': 'cbi-section' }, [
-			E('table', { 'class': 'table' }, [
-				E('tr', { 'class': 'tr cbi-rowstyle-2' }, [
-					E('td', { 'class': 'td' }, [
-						E('strong', {}, _('SSID') + ': ' + nilai(kv.ssid)),
+				]),
+				jalan ? E('tr', { 'class': 'tr cbi-rowstyle-2' }, [
+					E('td', { 'class': 'td', 'colspan': '2' }, [
+						E('div', {}, [
+							E('strong', {}, _('SSID') + ': ' + nilai(kv.ssid)),
+							' · ' + _('Mode') + ': Master',
+							' · ' + _('BSSID') + ': ' + nilai(bssid),
+							' · ' + _('Encryption') + ': ' +
+								((kv.encryption === 'none' || !kv.encryption) ? 'None' : 'WPA2-PSK')
+						]),
 						E('div', { 'class': 'cbi-value-description' },
-							_('Mode') + ': Master · ' +
-							(kv.encryption === 'none' || !kv.encryption ? _('Encryption') + ': None' : 'WPA2-PSK') + ' · ' +
-							_('BSSID') + ': ' + nilai(bssid) + ' · ' +
-							(klien.length ? (klien.length + ' ' + _('klien terhubung')) : _('belum ada klien')))
+							_('Signal') + ': — dBm / — dBm · ' +
+							(klien.length ? (klien.length + ' ' + _('klien terhubung')) : _('belum ada klien'))),
+						E('div', {}, [
+							E('button', {
+								'class': 'btn cbi-button',
+								'click': function () {
+									var f = document.getElementById('rw-ssid');
+									if (f) { f.scrollIntoView({ behavior: 'smooth', block: 'center' }); f.focus(); }
+								}
+							}, _('Edit'))
+						])
+					])
+				]) : E('tr', { 'class': 'tr cbi-rowstyle-2' }, [
+					E('td', { 'class': 'td', 'colspan': '2' }, [
+						E('em', {}, _('Device is not active')),
+						E('div', { 'class': 'cbi-value-description' },
+							_('hostapd tidak berjalan. Tekan Restart, atau periksa /tmp/wifi.log.'))
 					])
 				])
 			])
 		]);
+
+		var ssid = null;
 
 		var stations = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, _('Associated Stations')),
@@ -188,7 +206,7 @@ return view.extend({
 				  'AP hidup. Semua nilai di halaman ini dibaca langsung dari perangkat.'))
 		]);
 
-		return E([], [ radio, ssid, stations, ubah ]);
+		return E([], [ radio, stations, ubah ]);
 	},
 
 	render: function (res) {
