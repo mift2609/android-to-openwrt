@@ -23,6 +23,10 @@ MAC=12:00:00:00:00:0a
 
 log() { logger -t rolex-wifi "$*"; echo "$*" >> /tmp/wifi.log; }
 
+# Perintah tambahan: `/etc/init.d/rolex-wifi sinkron` (dipakai rolex-watchdog tiap menit)
+EXTRA_COMMANDS="sinkron"
+EXTRA_HELP="	sinkron	Sinkronkan setelan UCI (/etc/config/wireless) ke AP yang berjalan"
+
 # Kalau netifd sudah mengelola radio (sejak iwinfo terpasang, cara ini bekerja), jangan
 # jalankan hostapd manual — kalau tidak, dua hostapd berebut wlan0.
 netifd_pegang() {
@@ -46,12 +50,33 @@ bikin_vif_ap() {
 	return 1
 }
 
-start() {
-	if netifd_pegang; then
-		log "netifd sudah mengelola AP - hostapd manual dilewati"
-		return 0
-	fi
+# Ambil alih wlan0: matikan hostapd milik netifd (kalau ada) dan buang vif AP sisa.
+# Tanpa ini hostapd lama bertahan dengan konfigurasi lama -> setelan UCI baru tak terpakai
+# (pelajaran dari mido-wifi; driver wcn36xx hanya melayani satu vif AP).
+ambil_alih() {
+	for p in $(ps | grep -v grep | grep hostapd | awk '{print $1}'); do
+		[ "$p" = "$$" ] && continue
+		kill $p 2>/dev/null
+	done
+	sleep 1
+	for j in $(ls /sys/class/net 2>/dev/null | grep -E '^phy[0-9]+-ap[0-9]+$'); do
+		iw dev "$j" del 2>/dev/null && log "vif sisa $j dihapus"
+	done
+}
 
+# Selaraskan AP dengan setelan UCI. Dipanggil rolex-watchdog tiap menit, jadi mengubah
+# SSID/sandi/channel lewat LuCI (Network -> Wireless) atau uci langsung ikut terpakai.
+sinkron() {
+	[ -e /sys/class/net/$IFACE_DEV ] || return 0
+	WANT=$(/usr/bin/rolex-wifi-ctl fingerprint 2>/dev/null)
+	HAVE=$(cat /etc/hostapd-rolex.state 2>/dev/null)
+	if [ -n "$WANT" ] && [ "$WANT" != "$HAVE" ]; then
+		log "sinkron: setelan UCI berubah - AP dijalankan ulang (ssid=$(uci -q get wireless.wifinet0.ssid) ch=$(uci -q get wireless.radio0.channel))"
+		/usr/bin/rolex-wifi-ctl apply >/dev/null 2>&1
+	fi
+}
+
+start() {
 	echo "=== rolex-wifi $(date) ===" >> /tmp/wifi.log
 	KREL=$(uname -r); MDIR=/lib/modules/$KREL
 	for m in $MODS; do
@@ -69,6 +94,7 @@ start() {
 	[ -e /sys/class/ieee80211/phy0 ] || { log "phy0 TIDAK muncul (${i}s)"; return 0; }
 	log "phy0 muncul setelah ${i}s"
 
+	ambil_alih
 	bikin_vif_ap || return 0
 	ip link set "$IFACE_DEV" address $MAC 2>/dev/null
 	ip link set "$IFACE_DEV" up

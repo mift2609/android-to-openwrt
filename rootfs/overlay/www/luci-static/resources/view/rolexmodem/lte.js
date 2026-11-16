@@ -458,10 +458,7 @@ return view.extend({
 					row(_('Klien terhubung'), val(wifi.clients))
 				]),
 				E('p', { 'class': 'cbi-value-description' },
-					_('AP ini dijalankan rolex-wifi-ctl (hostapd manual). Untuk driver WiFi rolex, netifd/wpad ' +
-					  'tidak sanggup memegang AP dan iwinfo tidak bisa membaca SSID-nya — karena itu halaman ' +
-					  'LuCI Network → Wireless tidak akurat dan menunya disembunyikan. Keadaan sebenarnya ' +
-					  'ada di tabel ini.')),
+					_('AP ini dijalankan /etc/init.d/rolex-wifi (hostapd manual) — sama seperti mido, karena netifd/wpad gagal membuat vif di driver wcn36xx. Pengaturan tetap bisa dari LuCI: menu Network → Wireless menulis ke /etc/config/wireless, dan skrip kita menyelaraskan setiap menit (radio-nya tampil non-aktif/disabled di sana karena bukan netifd yang memegangnya — itu normal, bukan tanda WiFi mati).')),
 				E('p', {}, [
 					_('Ganti SSID/sandi/channel: '),
 					E('code', {}, '/usr/bin/rolex-wifi-ctl ssid <nama> | key <sandi> | channel <1-13> | apply'),

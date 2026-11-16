@@ -75,7 +75,8 @@ gen_conf() {
 	mkdir -p /var/run/hostapd
 	chown network:network /var/run/hostapd 2>/dev/null
 	chmod 750 /var/run/hostapd 2>/dev/null
-	say "conf ditulis: ssid=$SSID channel=$CH enc=${ENC:-none} key=$([ -n "$KEY" ] && echo 'ada' || echo '-')"
+	/usr/bin/rolex-wifi-ctl fingerprint > /etc/hostapd-rolex.state 2>/dev/null
+say "conf ditulis: ssid=$SSID channel=$CH enc=${ENC:-none} key=$([ -n "$KEY" ] && echo 'ada' || echo '-')"
 }
 
 case "$1" in
@@ -111,15 +112,11 @@ sync)
 	fi
 	;;
 clients) iw dev $IFACE_DEV station dump 2>/dev/null | grep -E "Station|signal:" | sed 's/^[[:space:]]*//' ;;
+fingerprint)
+	# sidik-jari setelan yang diinginkan (dipakai watchdog untuk tahu kapan perlu apply)
+	echo "$(uci -q get "$(_sec).ssid")|$(uci -q get "$(_sec).key")|$(uci -q get "$(_sec).encryption")|$(uci -q get wireless.radio0.channel)|$(uci -q get wireless.radio0.htmode)|$(uci -q get wireless.radio0.country)|$(uci -q get "$(_sec).hidden")"
+	;;
 apply)
-	# Kalau netifd mengelola radio (iwinfo sudah terpasang), biarkan netifd yang menerapkan.
-	if ubus call network.wireless status 2>/dev/null | grep -q '"up": true'; then
-		uci commit wireless
-		wifi reload >/dev/null 2>&1
-		sleep 6
-		say "AP (netifd): $(iw dev 2>/dev/null | grep -E 'ssid|type|channel' | tr '\n' ' ')"
-		exit 0
-	fi
 	killall hostapd 2>/dev/null
 	sleep 1
 	gen_conf

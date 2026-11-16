@@ -61,8 +61,10 @@ if [ "$(cat $MSS 2>/dev/null)" = "running" ]; then
 	fi
 fi
 
-# perubahan konfigurasi dari LuCI (Network -> Wireless) diterapkan ke AP
-[ -x /usr/bin/rolex-wifi-ctl ] && /usr/bin/rolex-wifi-ctl sync >/dev/null 2>&1
+# Perubahan konfigurasi dari LuCI (Network -> Wireless) / uci diterapkan ke AP berjalan.
+if /etc/init.d/rolex-wifi enabled >/dev/null 2>&1; then
+	/etc/init.d/rolex-wifi sinkron >/dev/null 2>&1
+fi
 
 # jaga ukuran log
 [ -f $LOG ] && [ "$(wc -l < $LOG)" -gt 500 ] && { tail -200 $LOG > $LOG.tmp && mv $LOG.tmp $LOG; }
