@@ -196,6 +196,22 @@ return view.extend({
 		});
 		var lastRefresh = E('span', { 'class': 'cbi-value-description' }, '');
 
+		// --- penjaga internet (auto ganti IP) ---
+		function guardRow(label, input, step) {
+			if (step) input.setAttribute('type', 'number');
+			input.setAttribute('style', 'width:7em');
+			if (step) input.setAttribute('step', String(step));
+			return E('div', { 'class': 'cbi-value' }, [
+				E('label', { 'class': 'cbi-value-title' }, label),
+				E('div', { 'class': 'cbi-value-field' }, input)
+			]);
+		}
+		var guardCheck = E('input', { 'class': 'cbi-input-text', 'value': d.check_secs || '60' });
+		var guardFails = E('input', { 'class': 'cbi-input-text', 'value': d.check_fails || '3' });
+		var guardRotate = E('input', { 'class': 'cbi-input-text', 'value': d.rotate_mins || '0' });
+		var guardRestart = E('input', { 'class': 'cbi-input-text', 'value': d.restart_after || '2' });
+		var guardTarget = E('input', { 'class': 'cbi-input-text', 'value': d.ping_target || '8.8.8.8' });
+
 		var apnInput = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'value': d.apn || '' });
 		var famSelect = E('select', { 'class': 'cbi-input-select' },
 			['ipv4', 'ipv6', 'ipv4v6'].map(function (v) {
@@ -379,6 +395,42 @@ return view.extend({
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Pengaturan')),
 				controls
+			]),
+			E('div', { 'class': 'cbi-section' }, [
+				E('h3', {}, _('Penjaga internet (auto ganti IP)')),
+				E('p', { 'class': 'cbi-value-description' },
+					_('Kalau internet hang — IP masih terpasang tapi tak ada jawaban ping — sesi data diulang ' +
+					  'otomatis supaya dapat IP baru, jadi tak perlu restart modem manual. Kalau berulang terus, ' +
+					  'modem MSS di-restart (usaha terakhir).')),
+				guardRow(_('Cek tiap (detik)'), guardCheck, 5),
+				guardRow(_('Gagal berturut-turut'), guardFails, 1),
+				guardRow(_('Ganti IP berkala (menit, 0 = mati)'), guardRotate, 1),
+				guardRow(_('Restart modem setelah N kali gagal'), guardRestart, 1),
+				E('div', { 'class': 'cbi-value' }, [
+					E('label', { 'class': 'cbi-value-title' }, _('Alamat yang di-ping')),
+					E('div', { 'class': 'cbi-value-field' }, guardTarget)
+				]),
+				E('button', {
+					'class': 'btn cbi-button cbi-button-apply',
+					'click': function () {
+						act([ 'netguard', String(parseInt(guardCheck.value, 10) || 60),
+						      String(parseInt(guardFails.value, 10) || 3),
+						      String(parseInt(guardRotate.value, 10) || 0),
+						      String(parseInt(guardRestart.value, 10) || 3),
+						      guardTarget.value.trim() ], _('Simpan penjaga internet'));
+					}
+				}, _('Simpan penjaga internet')),
+				' ',
+				E('button', {
+					'class': 'btn cbi-button',
+					'click': function () {
+						if (confirm(_('Ganti IP sekarang? Sambungan putus sebentar.')))
+							act([ 'lte-restart' ], _('Ganti IP sekarang'));
+					}
+				}, _('Ganti IP sekarang')),
+				' ',
+				E('span', { 'class': 'cbi-value-description' },
+					_('Target ping diubah lewat uci rolexlte.main.ping_target (kosong = 8.8.8.8).'))
 			]),
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('WiFi')),

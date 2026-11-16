@@ -25,6 +25,19 @@ _uci() { uci -q get "rolexlte.main.$1" 2>/dev/null; }
 [ -z "${APN_SET:-}" ] && { _a=$(_uci apn); [ -n "$_a" ] && APN=$_a; }
 IPFAM=$(_uci ipfam); [ -n "$IPFAM" ] || IPFAM=ipv4
 PROFILE=$(_uci profile)
+# penjaga internet (auto ganti IP):
+#   check_secs     = tiap berapa detik internet dicek
+#   check_fails    = berapa kali gagal berturut-turut sebelum sesi data diulang (IP baru)
+#   rotate_mins    = paksa ganti IP tiap N menit (0 = mati)
+#   restart_after  = berapa kali pengulangan sesi gagal berturut-turut sebelum modem MSS di-restart
+CHECK=$(_uci check_secs); [ -n "$CHECK" ] || CHECK=60
+FAILS=$(_uci check_fails); [ -n "$FAILS" ] || FAILS=3
+ROTATE=$(_uci rotate_mins); [ -n "$ROTATE" ] || ROTATE=0
+RESTART_AFTER=$(_uci restart_after); [ -n "$RESTART_AFTER" ] || RESTART_AFTER=3
+GRACE=$(_uci grace_secs); [ -n "$GRACE" ] || GRACE=60
+# target ping bisa diganti lewat env (untuk menguji sendiri, mis. PING_TARGET=10.255.255.1)
+_pt=$(_uci ping_target); [ -n "$_pt" ] && PING_TARGET=$_pt
+PING_TARGET=${PING_TARGET:-8.8.8.8}
 export IPFAM PROFILE
 
 log() { echo "$(date '+%H:%M:%S') $*" >> $LOG; }
@@ -180,6 +193,7 @@ if ! wait_register; then
 	wait_register || log "tetap belum terdaftar, tetap coba data"
 fi
 
+bad=0
 while :; do
 	$Q -d qrtr://0 --dpm-open-port="hw-data-ep-type=bam-dmux,hw-data-ep-iface-number=0,hw-data-rx-id=1,hw-data-tx-id=1" >/dev/null 2>&1
 	sleep 2
@@ -192,12 +206,43 @@ while :; do
 		kill -0 $RP 2>/dev/null || break
 		sleep 1; i=$((i+1))
 	done
+	# Penjaga internet: ping lewat wwan0. Kalau hang, sesi data diulang -> operator
+	# memberi IP baru. Kalau sering berulang, modem MSS di-restart (usaha terakhir).
+	bf=0
+	rot_since=$(cut -d. -f1 /proc/uptime)
+	# tenggang: sesi baru diberi waktu $GRACE detik sebelum dinilai (biar tidak dianggap bengong
+	# padahal baru selesai mendaftar)
+	sleep ${GRACE:-60}
 	while kill -0 $RP 2>/dev/null; do
-		sleep 15
-		ip -4 addr show wwan0 2>/dev/null | grep -q "inet " || { log "IP hilang"; break; }
+		sleep $CHECK
+		if ! timeout 6 ping -c1 -W3 -I wwan0 "$PING_TARGET" >/dev/null 2>&1; then
+			bf=$((bf + 1))
+			log "cek internet gagal ($bf/$FAILS)"
+			if [ "$bf" -ge "$FAILS" ]; then
+				log "internet mati -> sesi data diulang (minta IP baru)"
+				bad=$((bad + 1)); break
+			fi
+			continue
+		fi
+		# ada jawaban: sesi sehat
+		bf=0; bad=0
+		if [ "$ROTATE" -gt 0 ] 2>/dev/null; then
+			now=$(cut -d. -f1 /proc/uptime)
+			if [ $((now - rot_since)) -ge $((ROTATE * 60)) ]; then
+				log "rotasi IP berkala ($ROTATE menit) -> sesi data diulang"
+				break
+			fi
+		fi
+		ip -4 addr show wwan0 2>/dev/null | grep -q "inet " || { log "IP hilang"; bad=$((bad + 1)); break; }
 	done
 	kill $RP 2>/dev/null; wait $RP 2>/dev/null
 	log "call berhenti, ulang 5s"
 	sleep 5
+	if [ "${bad:-0}" -ge "$RESTART_AFTER" ]; then
+		log "sesi diulang $bad kali berturut-turut tanpa internet -> restart modem MSS"
+		modem_restart; ssp_auto; bad=0; bf=0
+		# beri modem waktu bangun & mendaftar dulu; tanpa jeda ini restart bisa beruntun
+		log "menunggu ${GRACE:-60}s setelah restart modem (biar modem sempat mendaftar)"; sleep ${GRACE:-60}
+	fi
 	wait_register || { log "belum terdaftar -> restart modem"; modem_restart; ssp_auto; }
 done

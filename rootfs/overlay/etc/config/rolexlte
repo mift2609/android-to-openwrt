@@ -1,0 +1,16 @@
+config rolexlte 'main'
+	option apn 'internet'
+	option ipfam 'ipv4'
+	option refresh '15'
+
+	# Penjaga internet — JANGAN agresif: ganti sesi/IP hanya kalau benar-benar bengong.
+	# Tenggang: beri waktu sesi baru sebelum dinilai (detik)
+	option grace_secs '60'
+	# Cek internet tiap N detik
+	option check_secs '60'
+	# Baru dianggap bengong setelah N kali gagal berturut-turut (N x check_secs detik tanpa internet)
+	option check_fails '3'
+	# Rotasi IP berkala: 0 = TIDAK pernah (hanya ganti IP kalau memang bengong)
+	option rotate_mins '0'
+	# Restart modem MSS hanya setelah sesi diulang N kali tetap tanpa internet
+	option restart_after '3'

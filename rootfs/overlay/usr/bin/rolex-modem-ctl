@@ -57,6 +57,11 @@ cmd_status() {
 	echo "apn=$(uci -q get rolexlte.main.apn)"
 	echo "ipfam=$(uci -q get rolexlte.main.ipfam)"
 	echo "refresh=$(uci -q get rolexlte.main.refresh)"
+	echo "check_secs=$(uci -q get rolexlte.main.check_secs)"
+	echo "check_fails=$(uci -q get rolexlte.main.check_fails)"
+	echo "rotate_mins=$(uci -q get rolexlte.main.rotate_mins)"
+	echo "restart_after=$(uci -q get rolexlte.main.restart_after)"
+	echo "ping_target=$(uci -q get rolexlte.main.ping_target)"
 	echo "profile=$(uci -q get rolexlte.main.profile)"
 	echo "$sig"
 	echo "network=$net"
@@ -99,6 +104,25 @@ apn)
 	;;
 apn-user) uci set rolexlte.main.username="$2"; uci commit rolexlte; say "username APN: $2" ;;
 apn-pass) uci set rolexlte.main.password="$2"; uci commit rolexlte; say "password APN diset" ;;
+lte-restart)
+	/etc/init.d/rolex-lte restart >/dev/null 2>&1
+	say "sesi LTE diulang — IP baru muncul 30-90 detik lagi"
+	;;
+netguard)
+	# netguard <cek-detik> <gagal-berturut> <rotasi-menit> [restart-setelah] [target-ping]
+	[ -n "$2" ] && [ -n "$3" ] || { say "pakai: netguard <cek-detik> <gagal> <rotasi-menit> [restart-setelah] [target-ping]"; exit 1; }
+	for v in "$2" "$3" "$4" "${5:-3}"; do
+		case "$v" in ''|*[!0-9]*) say "nilai harus angka"; exit 1 ;; esac
+	done
+	uci set rolexlte.main.check_secs="$2"
+	uci set rolexlte.main.check_fails="$3"
+	uci set rolexlte.main.rotate_mins="$4"
+	uci set rolexlte.main.restart_after="${5:-3}"
+	if [ -n "$6" ]; then uci set rolexlte.main.ping_target="$6"; else uci delete rolexlte.main.ping_target 2>/dev/null; fi
+	uci commit rolexlte
+	say "penjaga internet: cek ${2}s, gagal ${3}x, rotasi ${4} menit, restart modem setelah ${5:-3}x, target ${6:-8.8.8.8}"
+	/etc/init.d/rolex-lte restart >/dev/null 2>&1
+	;;
 refresh)
 	case "$2" in
 		''|*[!0-9]*) say "nilai harus angka detik (0 = mati)"; exit 1 ;;
@@ -130,7 +154,7 @@ reboot|modem-reboot)
 	;;
 luci-path) say "LuCI: Services -> Modem LTE  (/cgi-bin/luci/admin/services/rolexmodem)" ;;
 *) cat <<EOF
-pakai: $0 status|signal|bands|apn <apn>|apn-user <u>|apn-pass <p>|ipfam <v>|refresh <detik>|profile <p>|band <daftar|auto>|reboot
+pakai: $0 status|signal|bands|netguard <cek> <gagal> <rotasi>|apn <apn>|apn-user <u>|apn-pass <p>|ipfam <v>|refresh <detik>|profile <p>|band <daftar|auto>|reboot
 EOF
 	exit 1 ;;
 esac
