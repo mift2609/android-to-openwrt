@@ -1,0 +1,5 @@
+config ttyd
+	option interface '@lan'
+	# Terminal langsung masuk sebagai root (tanpa diminta username/sandi).
+	# Ganti ke '/bin/login' kalau ingin diminta login lagi.
+	option command '/bin/login -f root'

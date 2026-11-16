@@ -1,0 +1,47 @@
+#!/bin/sh
+# rolex-data-reset — pulihkan data call LTE tanpa reboot perangkat (jalankan manual).
+# Penjaga otomatis di rolex-lte-run memakai tangga yang sama.
+# pakai: rolex-data-reset [soft|rf|driver|modem|auto]
+LTE=/etc/init.d/rolex-lte
+LOG=/var/log/rolex-lte.log
+log() { echo "$(date '+%H:%M:%S') [reset] $*" >> $LOG; }
+internet() { timeout 8 ping -c1 -W3 -I wwan0 8.8.8.8 >/dev/null 2>&1; }
+tunggu() { i=0; while [ $i -lt 14 ]; do sleep 5; internet && return 0; i=$((i+1)); done; return 1; }
+
+tahap() {
+	case "$1" in
+	soft)
+		log "sesi data diulang"
+		$LTE restart >/dev/null 2>&1 ;;
+	rf)
+		log "siklus RF (QMI low-power -> online) + sesi ulang"
+		qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+		sleep 5
+		qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+		sleep 3
+		$LTE restart >/dev/null 2>&1 ;;
+	driver)
+		log "muat ulang driver qcom_bam_dmux + sesi ulang"
+		$LTE stop >/dev/null 2>&1; sleep 3
+		modprobe -r qcom_bam_dmux 2>/dev/null || rmmod qcom_bam_dmux 2>/dev/null
+		sleep 2
+		insmod "/lib/modules/$(uname -r)/qcom_bam_dmux.ko" 2>/dev/null || modprobe qcom_bam_dmux 2>/dev/null
+		sleep 2
+		$LTE start >/dev/null 2>&1 ;;
+	modem)
+		log "restart modem MSS"
+		/usr/bin/rolex-modem-ctl reboot >/dev/null 2>&1 ;;
+	esac
+	if tunggu; then log "internet kembali setelah tahap $1"; echo "internet kembali (tahap $1)"; return 0; fi
+	log "tahap $1 belum memulihkan"; echo "tahap $1 belum memulihkan"
+	return 1
+}
+
+case "$1" in
+	soft|rf|driver|modem) tahap "$1"; exit $? ;;
+	auto|"")
+		for t in soft rf driver modem; do tahap "$t" && exit 0; done
+		echo "semua tahap gagal — reboot perangkat pilihan terakhir"
+		exit 1 ;;
+	*) echo "pakai: $0 soft|rf|driver|modem|auto"; exit 1 ;;
+esac

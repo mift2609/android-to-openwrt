@@ -43,6 +43,9 @@ if [ -x /etc/init.d/adguardhome ]; then
 	}
 fi
 
+# vnStat: interface terdaftar + layanan jalan (untuk lihat pemakaian data)
+[ -x /usr/bin/rolex-vnstat-init ] && /usr/bin/rolex-vnstat-init
+
 # ModemManager: pastikan modem terlihat DAN aktif.
 # Modem harus "enabled" supaya SMS bisa dibaca/dikirim lewat QMI (mmcli).
 # Diuji: mengaktifkan MM TIDAK mengganggu sesi data kita (LTE tetap io=ok).

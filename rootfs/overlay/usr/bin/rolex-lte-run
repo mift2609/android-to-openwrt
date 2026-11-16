@@ -46,6 +46,25 @@ export IPFAM PROFILE
 
 log() { echo "$(date '+%H:%M:%S') $*" >> $LOG; }
 
+# Pemulihan ringan (dipakai sebelum restart modem / reboot):
+#  rf_cycle   : matikan RF lewat QMI (low-power) lalu online lagi
+#  reload_bam : lepas & muat ulang driver qcom_bam_dmux (kanal data)
+rf_cycle() {
+	log "siklus RF (QMI low-power -> online)"
+	qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+	sleep 5
+	qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+	sleep 3
+}
+reload_bam() {
+	log "muat ulang driver qcom_bam_dmux"
+	modprobe -r qcom_bam_dmux 2>/dev/null || rmmod qcom_bam_dmux 2>/dev/null
+	sleep 2
+	insmod "/lib/modules/$(uname -r)/qcom_bam_dmux.ko" 2>/dev/null ||
+		modprobe qcom_bam_dmux 2>/dev/null
+	sleep 2
+}
+
 at_open() { exec 3<>$AT 2>/dev/null; stty -F $AT raw -echo 115200 2>/dev/null; }
 at_send() { [ -e "$AT" ] || return 1; printf '%s\r' "$1" > "$AT" 2>/dev/null; }
 # at_expect <cmd> <substring> <timeout detik>
@@ -197,7 +216,7 @@ if ! wait_register; then
 	wait_register || log "tetap belum terdaftar, tetap coba data"
 fi
 
-bad=0; mss_count=0
+bad=0; mss_count=0; fix_step=0
 while :; do
 	$Q -d qrtr://0 --dpm-open-port="hw-data-ep-type=bam-dmux,hw-data-ep-iface-number=0,hw-data-rx-id=1,hw-data-tx-id=1" >/dev/null 2>&1
 	sleep 2
@@ -229,7 +248,7 @@ while :; do
 			continue
 		fi
 		# ada jawaban: sesi sehat
-		bf=0; bad=0; mss_count=0
+		bf=0; bad=0; mss_count=0; fix_step=0
 		if [ "$ROTATE" -gt 0 ] 2>/dev/null; then
 			now=$(cut -d. -f1 /proc/uptime)
 			if [ $((now - rot_since)) -ge $((ROTATE * 60)) ]; then
@@ -243,15 +262,30 @@ while :; do
 	log "call berhenti, ulang 5s"
 	sleep 5
 	if [ "${bad:-0}" -ge "$RESTART_AFTER" ]; then
-		log "sesi diulang $bad kali berturut-turut tanpa internet -> restart modem MSS"
-		modem_restart; ssp_auto; bad=0; bf=0
-		mss_count=$(( ${mss_count:-0} + 1 ))
-		if [ "$REBOOT_AFTER_MSS" -gt 0 ] 2>/dev/null && [ "$mss_count" -ge "$REBOOT_AFTER_MSS" ]; then
-			log "setelah $mss_count restart MSS tetap tanpa data -> reboot perangkat"
-			sync; sleep 3; reboot
-		fi
+		bad=0; bf=0
+		# Tangga pemulihan: ringan dulu (RF, driver), berat belakangan (modem, reboot).
+		case "${fix_step:-0}" in
+		0)
+			log "sesi diulang $RESTART_AFTER kali tanpa internet -> coba siklus RF"
+			rf_cycle ;;
+		1)
+			log "masih tanpa data -> muat ulang driver qcom_bam_dmux"
+			reload_bam ;;
+		2)
+			log "masih tanpa data -> restart modem MSS (remoteproc)"
+			modem_restart; ssp_auto; mss_count=$(( ${mss_count:-0} + 1 )) ;;
+		*)
+			log "tahap ringan habis -> restart modem MSS lagi"
+			modem_restart; ssp_auto
+			mss_count=$(( ${mss_count:-0} + 1 ))
+			if [ "$REBOOT_AFTER_MSS" -gt 0 ] 2>/dev/null && [ "$mss_count" -ge "$REBOOT_AFTER_MSS" ]; then
+				log "setelah $mss_count pemulihan tetap tanpa data -> reboot perangkat"
+				sync; sleep 3; reboot
+			fi ;;
+		esac
+		fix_step=$(( ${fix_step:-0} + 1 ))
 		# beri modem waktu bangun & mendaftar dulu; tanpa jeda ini restart bisa beruntun
-		log "menunggu ${GRACE:-60}s setelah restart modem (biar modem sempat mendaftar)"; sleep ${GRACE:-60}
+		log "menunggu ${GRACE:-60}s setelah tahap pemulihan"; sleep ${GRACE:-60}
 	fi
 	wait_register || { log "belum terdaftar -> restart modem"; modem_restart; ssp_auto; }
 done
