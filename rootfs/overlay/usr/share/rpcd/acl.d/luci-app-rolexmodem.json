@@ -3,18 +3,30 @@
 		"description": "Modem LTE rolex (APN, band, sinyal, restart modem)",
 		"read": {
 			"file": {
-				"/usr/bin/rolex-modem-ctl": [ "exec" ]
+				"/usr/bin/rolex-modem-ctl": [
+					"exec"
+				],
+				"/usr/bin/rolex-3ginfo-json": [
+					"exec"
+				]
 			},
 			"ubus": {
-				"uci": [ "get" ]
+				"uci": [
+					"get"
+				]
 			}
 		},
 		"write": {
 			"file": {
-				"/usr/bin/rolex-modem-ctl": [ "exec" ]
+				"/usr/bin/rolex-modem-ctl": [
+					"exec"
+				]
 			},
 			"ubus": {
-				"uci": [ "set", "commit" ]
+				"uci": [
+					"set",
+					"commit"
+				]
 			}
 		}
 	}
