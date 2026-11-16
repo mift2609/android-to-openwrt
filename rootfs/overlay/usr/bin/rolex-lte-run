@@ -238,12 +238,16 @@ while :; do
 		# menjalankan ulang layanan, jadi penjaga tidak bisa tersangkut diam-diam.
 		date +%s > /tmp/rolex-lte.beat
 		sleep $CHECK
-		# Dianggap hidup kalau SALAH SATU uji berhasil: ping yang diikat ke wwan0 (jalur data kita)
-		# atau ping biasa. ICMP lewat wwan0 kadang hilang sesaat (driver bam-dmux), dan dulu satu
-		# kegagalan palsu seperti ini cukup untuk memicu pengulangan sesi — yang justru membuat
-		# modem tersangkut. Jangan mengulang sesi hanya karena satu uji meleset.
+		# Dianggap HIDUP kalau salah satu dari tiga uji berhasil:
+		#   1) ping yang diikat ke wwan0 (jalur data kita)
+		#   2) ping biasa
+		#   3) TCP+TLS ke 1.1.1.1 (tanpa DNS) — uji terakhir ini penting karena operator kadang
+		#      menjatuhkan/membatasi ICMP beberapa menit sementara data tetap jalan (terbukti:
+		#      ping gagal sementara curl ke downloads.openwrt.org = 200). Tanpa uji ketiga, penjaga
+		#      mengulang sesi tanpa alasan — dan pengulangan itulah yang meninggalkan modem tersangkut.
 		if ! timeout 6 ping -c1 -W3 -I wwan0 "$PING_TARGET" >/dev/null 2>&1 &&
-		   ! timeout 6 ping -c1 -W3 "$PING_TARGET" >/dev/null 2>&1; then
+		   ! timeout 6 ping -c1 -W3 "$PING_TARGET" >/dev/null 2>&1 &&
+		   ! timeout 12 curl -s -o /dev/null --max-time 10 https://1.1.1.1/ >/dev/null 2>&1; then
 			bf=$((bf + 1))
 			log "cek internet gagal ($bf/$FAILS)"
 			if [ "$bf" -ge "$FAILS" ]; then
