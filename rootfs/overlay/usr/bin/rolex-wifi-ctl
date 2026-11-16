@@ -112,6 +112,14 @@ sync)
 	;;
 clients) iw dev $IFACE_DEV station dump 2>/dev/null | grep -E "Station|signal:" | sed 's/^[[:space:]]*//' ;;
 apply)
+	# Kalau netifd mengelola radio (iwinfo sudah terpasang), biarkan netifd yang menerapkan.
+	if ubus call network.wireless status 2>/dev/null | grep -q '"up": true'; then
+		uci commit wireless
+		wifi reload >/dev/null 2>&1
+		sleep 6
+		say "AP (netifd): $(iw dev 2>/dev/null | grep -E 'ssid|type|channel' | tr '\n' ' ')"
+		exit 0
+	fi
 	killall hostapd 2>/dev/null
 	sleep 1
 	gen_conf

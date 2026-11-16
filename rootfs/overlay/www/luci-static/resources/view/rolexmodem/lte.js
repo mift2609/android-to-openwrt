@@ -458,11 +458,15 @@ return view.extend({
 					row(_('Klien terhubung'), val(wifi.clients))
 				]),
 				E('p', { 'class': 'cbi-value-description' },
-					_('AP ini dijaga /usr/bin/rolex-wifi-ctl (hostapd + IP statis), bukan netifd — karena itu ' +
-					  'LuCI Network → Wireless memperlihatkan radio sebagai tidak aktif, padahal AP jalan.')),
+					_('AP ini dijalankan rolex-wifi-ctl (hostapd manual). Untuk driver WiFi rolex, netifd/wpad ' +
+					  'tidak sanggup memegang AP dan iwinfo tidak bisa membaca SSID-nya — karena itu halaman ' +
+					  'LuCI Network → Wireless tidak akurat dan menunya disembunyikan. Keadaan sebenarnya ' +
+					  'ada di tabel ini.')),
 				E('p', {}, [
 					_('Ganti SSID/sandi/channel: '),
-					E('code', {}, '/usr/bin/rolex-wifi-ctl ssid <nama> | key <sandi> | channel <1-13> | apply')
+					E('code', {}, '/usr/bin/rolex-wifi-ctl ssid <nama> | key <sandi> | channel <1-13> | apply'),
+					' ',
+					_('(atau lewat LuCI Network → Wireless)')
 				])
 			])
 		]);

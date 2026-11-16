@@ -23,6 +23,13 @@ MAC=12:00:00:00:00:0a
 
 log() { logger -t rolex-wifi "$*"; echo "$*" >> /tmp/wifi.log; }
 
+# Kalau netifd sudah mengelola radio (sejak iwinfo terpasang, cara ini bekerja), jangan
+# jalankan hostapd manual — kalau tidak, dua hostapd berebut wlan0.
+netifd_pegang() {
+	ubus call network.wireless status 2>/dev/null | grep -q '"up": true' &&
+		iw dev "$IFACE_DEV" info 2>/dev/null | grep -q "type AP"
+}
+
 bikin_vif_ap() {
 	i=0
 	while [ $i -lt 4 ]; do
@@ -40,6 +47,11 @@ bikin_vif_ap() {
 }
 
 start() {
+	if netifd_pegang; then
+		log "netifd sudah mengelola AP - hostapd manual dilewati"
+		return 0
+	fi
+
 	echo "=== rolex-wifi $(date) ===" >> /tmp/wifi.log
 	KREL=$(uname -r); MDIR=/lib/modules/$KREL
 	for m in $MODS; do
