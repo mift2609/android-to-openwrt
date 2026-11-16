@@ -1,0 +1,19 @@
+{
+	"luci-app-rolexsms": {
+		"description": "SMS rolex lewat QMI/ModemManager",
+		"read": {
+			"file": {
+				"/usr/bin/rolex-sms-ctl": [
+					"exec"
+				]
+			}
+		},
+		"write": {
+			"file": {
+				"/usr/bin/rolex-sms-ctl": [
+					"exec"
+				]
+			}
+		}
+	}
+}

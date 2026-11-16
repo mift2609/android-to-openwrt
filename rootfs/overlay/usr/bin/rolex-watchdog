@@ -28,7 +28,8 @@ iw dev wlan0 info 2>/dev/null | grep -q "type AP" || {
 
 # NAT klien: kernel ini tanpa NFT_NAT -> fw4 gagal, jadi aturan iptables-legacy dijaga di sini
 if [ -x /etc/init.d/rolex-nat ]; then
-	/etc/init.d/rolex-nat status_quiet 2>/dev/null || {
+	if [ -x /usr/sbin/iptables ]; then I=/usr/sbin/iptables; else I=/usr/sbin/iptables-legacy; fi
+	$I -t nat -C POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null || {
 		say "aturan NAT klien hilang -> dipasang ulang"
 		/etc/init.d/rolex-nat start >/dev/null 2>&1
 	}
@@ -42,14 +43,19 @@ if [ -x /etc/init.d/adguardhome ]; then
 	}
 fi
 
-# ModemManager sering tidak menemukan modem kalau dia start sebelum MSS bangun
-# (gejala: mmcli -L kosong, `mmcli -m any` -> "couldn't find modem", halaman LuCI
-# tidak bisa menampilkan daftar band / lock band). Restart MM setelah MSS hidup.
+# ModemManager: pastikan modem terlihat DAN aktif.
+# Modem harus "enabled" supaya SMS bisa dibaca/dikirim lewat QMI (mmcli).
+# Diuji: mengaktifkan MM TIDAK mengganggu sesi data kita (LTE tetap io=ok).
 if [ "$(cat $MSS 2>/dev/null)" = "running" ]; then
 	mmcli -L 2>/dev/null | grep -q "ModemManager1/Modem" || {
 		say "ModemManager tidak melihat modem -> restart MM"
 		/etc/init.d/modemmanager restart >/dev/null 2>&1
 	}
+	mmstate=$(mmcli -m any 2>/dev/null | sed -n 's/^.*|[[:space:]]*state:[[:space:]]*\(.*\)$/\1/p' | head -1)
+	if [ "$mmstate" = "disabled" ]; then
+		say "ModemManager: modem disabled -> diaktifkan (SMS lewat QMI)"
+		mmcli -m any --enable >/dev/null 2>&1
+	fi
 fi
 
 # perubahan konfigurasi dari LuCI (Network -> Wireless) diterapkan ke AP
