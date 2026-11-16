@@ -1,0 +1,17 @@
+#!/bin/sh
+# rolex-timeout — jalankan perintah dengan batas waktu.
+# Image rolex memakai busybox TANPA applet `timeout`; karena itu setiap `timeout N cmd` di skrip
+# kita gagal seketika ("timeout: not found") dan tampak seperti perintahnya yang gagal. Berkas ini
+# dipasang juga sebagai /usr/bin/timeout supaya skrip/paket lain yang mengharapkannya tetap jalan.
+# pakai: timeout <detik> <perintah> [arg...]
+[ $# -ge 2 ] || { echo "pakai: timeout <detik> <perintah> [arg...]" >&2; exit 125; }
+_detik=$1; shift
+"$@" &
+_pid=$!
+( sleep "$_detik"; kill -9 "$_pid" 2>/dev/null ) &
+_watch=$!
+wait "$_pid" 2>/dev/null
+_rc=$?
+kill "$_watch" 2>/dev/null
+wait "$_watch" 2>/dev/null
+exit $_rc
