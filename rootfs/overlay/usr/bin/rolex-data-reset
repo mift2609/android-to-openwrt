@@ -6,7 +6,8 @@ LTE=/etc/init.d/rolex-lte
 LOG=/var/log/rolex-lte.log
 log() { echo "$(date '+%H:%M:%S') [reset] $*" >> $LOG; }
 internet() { timeout 8 ping -c1 -W3 -I wwan0 8.8.8.8 >/dev/null 2>&1; }
-tunggu() { i=0; while [ $i -lt 14 ]; do sleep 5; internet && return 0; i=$((i+1)); done; return 1; }
+# beri waktu sampai 2 menit: sesi baru kadang baru mengalirkan data setelah ~90 detik
+tunggu() { i=0; while [ $i -lt 20 ]; do sleep 6; internet && return 0; i=$((i+1)); done; return 1; }
 
 tahap() {
 	case "$1" in
@@ -20,14 +21,15 @@ tahap() {
 		qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
 		sleep 3
 		$LTE restart >/dev/null 2>&1 ;;
-	driver)
-		log "muat ulang driver qcom_bam_dmux + sesi ulang"
-		$LTE stop >/dev/null 2>&1; sleep 3
-		modprobe -r qcom_bam_dmux 2>/dev/null || rmmod qcom_bam_dmux 2>/dev/null
-		sleep 2
-		insmod "/lib/modules/$(uname -r)/qcom_bam_dmux.ko" 2>/dev/null || modprobe qcom_bam_dmux 2>/dev/null
-		sleep 2
-		$LTE start >/dev/null 2>&1 ;;
+	rf2)
+		# siklus RF kedua dengan jeda lebih lama (memuat ulang driver bam-dmux JANGAN —
+		# terbukti meninggalkan wwan0 tanpa IP)
+		log "siklus RF kedua (low-power -> online, jeda lebih lama) + sesi ulang"
+		qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+		sleep 10
+		qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+		sleep 10
+		$LTE restart >/dev/null 2>&1 ;;
 	modem)
 		log "restart modem MSS"
 		/usr/bin/rolex-modem-ctl reboot >/dev/null 2>&1 ;;
@@ -38,10 +40,10 @@ tahap() {
 }
 
 case "$1" in
-	soft|rf|driver|modem) tahap "$1"; exit $? ;;
+	soft|rf|rf2|modem) tahap "$1"; exit $? ;;
 	auto|"")
-		for t in soft rf driver modem; do tahap "$t" && exit 0; done
+		for t in soft rf rf2 modem; do tahap "$t" && exit 0; done
 		echo "semua tahap gagal — reboot perangkat pilihan terakhir"
 		exit 1 ;;
-	*) echo "pakai: $0 soft|rf|driver|modem|auto"; exit 1 ;;
+	*) echo "pakai: $0 soft|rf|rf2|modem|auto"; exit 1 ;;
 esac

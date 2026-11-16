@@ -56,14 +56,8 @@ rf_cycle() {
 	qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
 	sleep 3
 }
-reload_bam() {
-	log "muat ulang driver qcom_bam_dmux"
-	modprobe -r qcom_bam_dmux 2>/dev/null || rmmod qcom_bam_dmux 2>/dev/null
-	sleep 2
-	insmod "/lib/modules/$(uname -r)/qcom_bam_dmux.ko" 2>/dev/null ||
-		modprobe qcom_bam_dmux 2>/dev/null
-	sleep 2
-}
+# (Dihapus) reload_bam(): memuat ulang driver qcom_bam_dmux terbukti membuat sesi data
+# hidup lalu mati lagi (wwan0 kehilangan IP). Jangan dihidupkan kembali tanpa uji hati-hati.
 
 at_open() { exec 3<>$AT 2>/dev/null; stty -F $AT raw -echo 115200 2>/dev/null; }
 at_send() { [ -e "$AT" ] || return 1; printf '%s\r' "$1" > "$AT" 2>/dev/null; }
@@ -269,8 +263,11 @@ while :; do
 			log "sesi diulang $RESTART_AFTER kali tanpa internet -> coba siklus RF"
 			rf_cycle ;;
 		1)
-			log "masih tanpa data -> muat ulang driver qcom_bam_dmux"
-			reload_bam ;;
+			# Catatan: memuat ulang qcom_bam_dmux JANGAN dipakai — setelah rmmod/insmod
+			# netdev wwan0 muncul lalu langsung kehilangan IP (terbukti 16 Nov 2026),
+			# jadi siklus RF kedua lebih aman.
+			log "masih tanpa data -> siklus RF kedua (lebih lama)"
+			rf_cycle; sleep 20 ;;
 		2)
 			log "masih tanpa data -> restart modem MSS (remoteproc)"
 			modem_restart; ssp_auto; mss_count=$(( ${mss_count:-0} + 1 )) ;;
