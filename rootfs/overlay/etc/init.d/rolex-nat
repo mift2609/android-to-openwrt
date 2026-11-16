@@ -45,7 +45,16 @@ start() {
 	for ifc in usb0 wlan0; do
 		$I -C FORWARD -i "$ifc" -o wwan0 -j ACCEPT 2>/dev/null || $I -A FORWARD -i "$ifc" -o wwan0 -j ACCEPT
 	done
-	log "NAT klien aktif: MASQUERADE wwan0 + FORWARD usb0/wlan0 -> wwan0"
+	# Chain penghitung trafik wwan0 (driver bam-dmux tidak mengisi /sys/class/net/wwan0/statistics
+	# dan /proc/net/dev -- semuanya 0). Dipakai halaman LuCI "4G Connection" untuk rx/tx.
+	$I -N ROLXSTAT 2>/dev/null
+	$I -F ROLXSTAT 2>/dev/null
+	$I -A ROLXSTAT -i wwan0 -j RETURN   # baris ini menghitung RX (in = wwan0)
+	$I -A ROLXSTAT -o wwan0 -j RETURN   # baris ini menghitung TX (out = wwan0)
+	for h in FORWARD INPUT OUTPUT; do
+		$I -C $h -j ROLXSTAT 2>/dev/null || $I -I $h 1 -j ROLXSTAT
+	done
+	log "NAT klien aktif: MASQUERADE wwan0 + FORWARD usb0/wlan0 -> wwan0 (+chain ROLXSTAT)"
 }
 
 stop() {
