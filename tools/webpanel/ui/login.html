@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel OpenWrt — masuk</title>
+<link rel="stylesheet" href="/s.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-top">
+    <div class="brand">
+      <div class="brand-mark">O</div>
+      <div class="brand-name">OpenWrt</div>
+      <span class="badge">ROLEX</span>
+    </div>
+    <span class="pill"><span class="dot"></span>panel lokal</span>
+  </div>
+
+  <div class="stage">
+    <form class="card-login" id="f">
+      <div class="card-logo">O</div>
+      <h1>OpenWrt Control Panel</h1>
+      <p class="sub">Panel kendali router rolex &middot; MSM8917</p>
+
+      <div class="field">
+        <label for="pw">Kata sandi akses</label>
+        <div class="input-wrap">
+          <input id="pw" type="password" placeholder="Masukkan kata sandi panel" autofocus autocomplete="current-password">
+          <button class="eye" type="button" id="eye" aria-label="Tampilkan sandi">&#128065;</button>
+        </div>
+      </div>
+
+      <div class="quick"><span>Status akses:</span><span class="pill ok"><span class="dot"></span>sandi aktif</span></div>
+      <div class="err" id="err"></div>
+      <button class="btn-signin" type="submit">Masuk &rarr;</button>
+
+      <div class="divider">OpenWrt &amp; LuCI</div>
+      <p class="sub" style="margin:0;font-size:11px">LuCI tetap di port 80 &middot; panel ini di port 8081</p>
+    </form>
+  </div>
+
+  <div class="footerbar">OpenWrt 24.10.5 &bull; rolex &bull; MSM8917</div>
+</div>
+<script>
+document.getElementById('eye').onclick = function () {
+  var i = document.getElementById('pw');
+  i.type = i.type === 'password' ? 'text' : 'password';
+};
+document.getElementById('f').onsubmit = async function (e) {
+  e.preventDefault();
+  var pw = document.getElementById('pw').value, err = document.getElementById('err');
+  err.textContent = '';
+  var r = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: pw })
+  });
+  if (r.ok) { location.reload(); } else { err.textContent = 'Kata sandi salah.'; }
+  return false;
+};
+</script>
+</body>
+</html>
