@@ -76,7 +76,12 @@ cmd_status() {
 	echo "registration=$reg"
 	echo "ip=$(ip -4 -o addr show wwan0 2>/dev/null | awk '{print $4}' | head -1)"
 	echo "gateway=$(ip route 2>/dev/null | awk '/^default .* wwan0/{print $3}' | head -1)"
-	echo "io=$(ip -4 -o addr show wwan0 >/dev/null 2>&1 && (ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 && echo ok || echo gagal) || echo tidak-ada)"
+	# `io` = bisa lewat internet atau tidak. Ping sekali bisa meleset (ICMP pertama sering hilang
+	# setelah sesi baru), jadi coba dua kali sebelum menyatakan gagal. Catatan: gateway operator
+	# (mis. 10.2.52.165) TIDAK menjawab ICMP, jadi jangan dipakai sebagai penanda.
+	echo "io=$(if ip -4 -o addr show wwan0 >/dev/null 2>&1; then
+		ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 || ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 && echo ok || echo gagal
+	else echo tidak-ada; fi)"
 	echo "lte_service=$(/etc/init.d/rolex-lte running >/dev/null 2>&1 && echo jalan || echo mati)"
 	echo "mm_state=$(mmcli -m any 2>/dev/null | sed -n 's/^[[:space:]]*|[[:space:]]*state:[[:space:]]*\(.*\)$/\1/p' | head -1)"
 }
