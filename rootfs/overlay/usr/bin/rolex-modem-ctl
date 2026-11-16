@@ -83,14 +83,14 @@ cmd_status() {
 		ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 || ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 && echo ok || echo gagal
 	else echo tidak-ada; fi)"
 	echo "lte_service=$(/etc/init.d/rolex-lte running >/dev/null 2>&1 && echo jalan || echo mati)"
-	echo "mm_state=$(mmcli -m any 2>/dev/null | sed -n 's/^[[:space:]]*|[[:space:]]*state:[[:space:]]*\(.*\)$/\1/p' | head -1)"
+	echo "mm_state=$(timeout 20 mmcli -m any 2>/dev/null | sed -n 's/^[[:space:]]*|[[:space:]]*state:[[:space:]]*\(.*\)$/\1/p' | head -1)"
 }
 
 cmd_bands() {
 	# blok mentah dari ModemManager (band list panjang & terlipat beberapa baris);
 	# parsing final dilakukan di halaman LuCI.
 	echo "bands_block<<EOF"
-	mmcli -m any 2>/dev/null | sed -n '/Bands/,/^[[:space:]]*---/p' | sed 's/|//g' | tr -s ' '
+	timeout 20 mmcli -m any 2>/dev/null | sed -n '/Bands/,/^[[:space:]]*---/p' | sed 's/|//g' | tr -s ' '
 	echo "EOF"
 }
 
@@ -146,7 +146,7 @@ band)
 	[ -n "$2" ] || { say "pakai: band \"eutran-3,eutran-5\" | band auto"; exit 1; }
 	# modemmanager 1.22 (OpenWrt) hanya mau pemisah "|" — koma ditolak
 	case "$2" in auto|any) B=any ;; *) B=$(printf '%s' "$2" | tr ',' '|') ;; esac
-	out=$(mmcli -m any --set-current-bands="$B" 2>&1)
+	out=$(timeout 20 mmcli -m any --set-current-bands="$B" 2>&1)
 	say "band ($B): $out"
 	# pindah band memutus sesi data lama -> bangun ulang (jalan di latar belakang
 	# supaya halaman LuCI tak menunggu 60-90 s)

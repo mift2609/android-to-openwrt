@@ -46,6 +46,20 @@ fi
 # vnStat: interface terdaftar + layanan jalan (untuk lihat pemakaian data)
 [ -x /usr/bin/rolex-vnstat-init ] && /usr/bin/rolex-vnstat-init
 
+# Penjaga LTE (rolex-lte-run) bisa tersangkut di panggilan qmicli saat modem macet: layanan masih
+# "jalan" tapi tak ada satu pun siklus selesai. Kalau internet mati DAN denyutnya basi >3 menit,
+# bunuh sisa proses yang nyangkut lalu jalankan layanannya ulang.
+if ! timeout 6 ping -c1 -W3 -I wwan0 8.8.8.8 >/dev/null 2>&1; then
+	beat=$(cat /tmp/rolex-lte.beat 2>/dev/null)
+	now=$(date +%s)
+	if [ -z "$beat" ] || [ $((now - beat)) -gt 180 ]; then
+		say "penjaga LTE tersangkut (denyut basi ${beat:-tidak-ada}) -> bersihkan + jalankan ulang"
+		for pp in $(ps | grep -v grep | grep -E "qmicli|rolex-lte-run" | awk '{print $1}'); do kill -9 $pp 2>/dev/null; done
+		sleep 2
+		/etc/init.d/rolex-lte restart >/dev/null 2>&1
+	fi
+fi
+
 # ModemManager: pastikan modem terlihat DAN aktif.
 # Modem harus "enabled" supaya SMS bisa dibaca/dikirim lewat QMI (mmcli).
 # Diuji: mengaktifkan MM TIDAK mengganggu sesi data kita (LTE tetap io=ok).

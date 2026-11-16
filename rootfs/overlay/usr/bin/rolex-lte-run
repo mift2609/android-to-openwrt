@@ -18,6 +18,8 @@ T=/usr/bin/rolex-qmi
 at_port() { /usr/bin/rolex-at-port 2>/dev/null || echo /dev/wwan0at0; }
 MSS=/sys/class/remoteproc/remoteproc1/state
 LOG=/var/log/rolex-lte.log
+
+date +%s > /tmp/rolex-lte.beat   # denyut awal (lihat rolex-watchdog)
 APN=${APN:-internet}
 # APN/IP family/profile bisa diatur dari LuCI (menu Modem → Modem LTE) lewat
 # uci /etc/config/rolexlte. Nilai env tetap menang supaya debug manual tetap bisa.
@@ -51,9 +53,9 @@ log() { echo "$(date '+%H:%M:%S') $*" >> $LOG; }
 #  reload_bam : lepas & muat ulang driver qcom_bam_dmux (kanal data)
 rf_cycle() {
 	log "siklus RF (QMI low-power -> online)"
-	qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+	timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
 	sleep 5
-	qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+	timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
 	sleep 3
 }
 # (Dihapus) reload_bam(): memuat ulang driver qcom_bam_dmux terbukti membuat sesi data
@@ -231,6 +233,10 @@ while :; do
 	# padahal baru selesai mendaftar)
 	sleep ${GRACE:-60}
 	while kill -0 $RP 2>/dev/null; do
+		# denyut: dipakai rolex-watchdog untuk tahu penjaga masih hidup. Kalau panggilan qmicli
+		# menggantung (modem macet), denyut ini berhenti -> watchdog membunuh sisa proses +
+		# menjalankan ulang layanan, jadi penjaga tidak bisa tersangkut diam-diam.
+		date +%s > /tmp/rolex-lte.beat
 		sleep $CHECK
 		if ! timeout 6 ping -c1 -W3 -I wwan0 "$PING_TARGET" >/dev/null 2>&1; then
 			bf=$((bf + 1))

@@ -37,8 +37,8 @@ neigh=$(printf '%s\n' "$cli" | awk '
 	/RSRP:/ { if (p != "") { printf "%s%s (%s dBm)", (n++ ? ", " : ""), p, $2; p = "" } }')
 
 modem_rev=$($Q --dms-get-revision 2>/dev/null | sed -n "s/.*Revision: '\(.*\)'.*/\1/p" | head -1)
-mm=$(mmcli -m any 2>/dev/null)
-mmi=$(mmcli -i any 2>/dev/null)
+mm=$(timeout 20 mmcli -m any 2>/dev/null)
+mmi=$(timeout 20 mmcli -i any 2>/dev/null)
 imei=$(printf '%s\n' "$mm" | sed -n 's/.*equipment id:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
 imsi=$(printf '%s\n' "$mmi" | sed -n 's/.*imsi:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
 iccid=$(printf '%s\n' "$mmi" | sed -n 's/.*iccid:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)

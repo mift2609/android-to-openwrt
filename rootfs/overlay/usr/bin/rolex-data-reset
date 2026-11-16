@@ -20,18 +20,18 @@ tahap() {
 		$LTE restart >/dev/null 2>&1 ;;
 	rf)
 		log "siklus RF (QMI low-power -> online) + sesi ulang"
-		qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
 		sleep 5
-		qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
 		sleep 3
 		$LTE restart >/dev/null 2>&1 ;;
 	rf2)
 		# siklus RF kedua dengan jeda lebih lama (memuat ulang driver bam-dmux JANGAN —
 		# terbukti meninggalkan wwan0 tanpa IP)
 		log "siklus RF kedua (low-power -> online, jeda lebih lama) + sesi ulang"
-		qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
 		sleep 10
-		qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
 		sleep 10
 		$LTE restart >/dev/null 2>&1 ;;
 	modem)
