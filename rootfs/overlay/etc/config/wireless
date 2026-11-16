@@ -1,21 +1,22 @@
+# AP rolex dijalankan /etc/init.d/rolex-wifi (hostapd manual).
+# Layanan `wpad` DIMATIKAN dan `wifi-scripts` tetap terpasang: tanpa hostapd global milik netifd,
+# netifd tidak bisa memegang driver mode wlan0 maupun menghapus vif kita (resep paritas mido).
+# Karena itu radio0 TIDAK perlu ditandai `disabled`.
+# Setelan di bawah dipakai skrip (SSID/sandi/channel/htmode dibaca dari sini dan diselaraskan
+# tiap menit oleh rolex-watchdog), jadi mengubahnya lewat LuCI atau `uci set` ikut terpakai.
+package wireless
+
 config wifi-device 'radio0'
 	option type 'mac80211'
 	option path 'platform/soc@0/a204000.remoteproc/remoteproc/remoteproc2/remoteproc2:smd-edge/remoteproc2:smd-edge.WCNSS_CTRL.-1.-1/a204000.remoteproc:smd-edge:wcnss:wifi'
 	option band '2g'
-	option channel '6'
-	option htmode 'HT20'
-	option disabled '0'
+	option channel '11'
+	option htmode 'HT40'
 	option cell_density '0'
 	option country 'ID'
-	# disabled '1': netifd TIDAK boleh menyentuh radio ini. Driver wcn36xx tidak melayani
-	# pembuatan vif oleh netifd/hostapd (terbukti di 7.1.3 & 6.19.5), dan kalau netifd
-	# mencoba, vif wlan0 milik rolex-wifi malah dihapus. AP dijalankan /etc/init.d/rolex-wifi.
-	option disabled '1'
+	option txpower '20'
+	option legacy_rates '1'
 
-# AP rolex dijalankan /etc/init.d/rolex-wifi (hostapd manual) — sama seperti mido, karena
-# netifd/wpad gagal membuat vif di driver wcn36xx. Setelan di bawah ini TETAP DIPAKAI:
-# skrip itu membaca SSID/sandi/channel/htmode dari UCI dan menyelaraskan tiap menit, jadi
-# mengubah WiFi lewat LuCI (Network -> Wireless) atau `uci set` langsung ikut terpakai.
 config wifi-iface 'wifinet0'
 	option device 'radio0'
 	option mode 'ap'
@@ -23,3 +24,5 @@ config wifi-iface 'wifinet0'
 	option ssid 'rolex-hotspot'
 	option encryption 'psk2'
 	option key 'rolex12345'
+	option ifname 'wlan0'
+	option macaddr '12:00:00:00:00:0a'
