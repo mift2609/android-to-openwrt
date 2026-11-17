@@ -63,14 +63,23 @@
 		}
 	}
 
-	function tidy() {
+	function tidy(root) {
 		// halaman About memuat kredit pembuat asli: biarkan apa adanya
 		if ((location.hash || '').indexOf('#about') === 0) return;
-		for (const el of document.querySelectorAll('span, div, p, td, label')) {
+		const scope = root && root.querySelectorAll ? root : document;
+		for (const el of scope.querySelectorAll('span, div, p, td, label')) {
 			if (el.style.display === 'none') continue;
 			const raw = (el.textContent || '').trim();
 			if (!raw) continue;
 			const low = raw.toLowerCase();
+
+			// isi yang sudah tampil di kartu "Kontrol Modem LTE" di bawah — jangan dobel di atas
+			if (raw.length < 40 && /^(physical cell id|earfcn)/i.test(raw)) {
+				let row = el;
+				while (row.parentElement && row.parentElement.children.length === 1) row = row.parentElement;
+				if (row.style) { row.style.display = 'none'; row.setAttribute('data-why', 'dobel'); }
+				continue;
+			}
 
 			// pola hanya untuk elemen kecil (jangan pernah mengenai pembungkus halaman)
 			if (raw.length <= 120 && el.children.length <= 2) {
@@ -160,13 +169,23 @@
 		}
 	}
 
-	let t = null;
-	const debounce = () => { clearTimeout(t); t = setTimeout(tidy, 150); };
+	// Tanpa setTimeout: MutationObserver berjalan sebagai microtask, yaitu SEBELUM browser
+	// menggambar. Jadi item yang disembunyikan tidak pernah sempat terlihat (tidak berkedip).
+	function scan(node) {
+		if (!node || node.nodeType !== 1) return;
+		tidy(node);
+		if (node.parentElement) tidy(node.parentElement);
+	}
+
+	new MutationObserver(muts => {
+		for (const m of muts) for (const n of m.addedNodes) scan(n);
+	}).observe(document.documentElement, { childList: true, subtree: true });
 
 	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', tidy);
+		document.addEventListener('DOMContentLoaded', () => tidy(document));
 	} else {
-		tidy();
+		tidy(document);
 	}
-	new MutationObserver(debounce).observe(document.documentElement, { childList: true, subtree: true });
+	window.addEventListener('hashchange', () => tidy(document));
+	setInterval(() => tidy(document), 5000); // sapuan penuh berkala
 })();

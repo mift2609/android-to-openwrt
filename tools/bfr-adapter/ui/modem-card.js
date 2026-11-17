@@ -80,6 +80,63 @@
 		return el;
 	}
 
+	// Ganti isi kartu "Cellular Radio Signal" bawaan dengan bar kekuatan sinyal + persentase
+	// (PCI/EARFCN/band sudah ada di kartu Kontrol Modem LTE di bawah, jadi tidak diulang).
+	function strengthBar(pct, rsrp, rsrq, sinr) {
+		if ((location.hash || '').indexOf('#modem') !== 0) return;
+		const head = [...document.querySelectorAll('h1,h2,h3,h4,div,span')]
+			.find(e => /cellular radio signal/i.test((e.textContent || '').trim()) && e.children.length === 0);
+		if (!head) return;
+		// naik sampai ketemu kotak berkartu (punya garis tepi), bukan sampai ke header halaman
+		let card = head;
+		for (let i = 0; i < 12; i++) {
+			const cs = getComputedStyle(card);
+			const tebal = parseFloat(cs.borderTopWidth) || 0;
+			const radius = parseFloat(cs.borderTopLeftRadius) || 0;
+			if (tebal > 0 && radius > 3 && card.querySelectorAll('div').length < 40) break;
+			if (!card.parentElement) break;
+			card = card.parentElement;
+		}
+		if (!card || card.querySelector('#mc-bar')) return;
+		const n = Number(pct);
+		const warna = n >= 70 ? '#34d399' : n >= 45 ? '#fbbf24' : n >= 20 ? '#fb923c' : '#f87171';
+		const label = n >= 70 ? 'kuat' : n >= 45 ? 'sedang' : n >= 20 ? 'lemah' : 'sangat lemah';
+		const el = document.createElement('div');
+		el.id = 'mc-bar';
+		el.style.cssText = 'padding:4px 0 10px';
+		el.innerHTML =
+			`<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8b93a5;margin-bottom:5px">
+			   <span>Kekuatan Sinyal</span><span style="color:${warna};font-weight:800">${n}% · ${label}</span></div>
+			 <div style="height:12px;background:#10141d;border:1px solid #272e3c;border-radius:7px;overflow:hidden">
+			   <div style="height:100%;width:${n}%;background:${warna};transition:width .4s ease"></div></div>
+			 <div style="margin-top:6px;font-size:11px;color:#8b93a5">RSRP ${rsrp || '-'} dBm · RSRQ ${rsrq || '-'} dB · SINR ${sinr || '-'} dB</div>`;
+		// taruh tepat di atas baris kotak nilai (RSRP (POWER)) — jadi persis di bawah judul
+		const petak = [...card.querySelectorAll('*')].find(e => /rsrp \(power\)/i.test((e.textContent || '').trim()) && e.children.length === 0);
+		if (petak) {
+			let atas = petak;
+			while (atas.parentElement && atas.parentElement !== card) atas = atas.parentElement;
+			if (atas.parentElement === card) card.insertBefore(el, atas);
+			else card.insertBefore(el, card.firstChild);
+		} else {
+			card.insertBefore(el, card.firstChild);
+		}
+	}
+
+	function updateBar(s) {
+		const el = document.getElementById('mc-bar');
+		if (!el || !s) return;
+		const n = Number(s.signal_pct);
+		if (!isFinite(n)) return;
+		const warna = n >= 70 ? '#34d399' : n >= 45 ? '#fbbf24' : n >= 20 ? '#fb923c' : '#f87171';
+		const label = n >= 70 ? 'kuat' : n >= 45 ? 'sedang' : n >= 20 ? 'lemah' : 'sangat lemah';
+		const fill = el.querySelector('div > div');
+		const txt = el.querySelector('span:last-child');
+		const det = el.lastElementChild;
+		if (fill) { fill.style.width = n + '%'; fill.style.background = warna; }
+		if (txt) { txt.textContent = n + '% · ' + label; txt.style.color = warna; }
+		if (det) det.textContent = `RSRP ${s.rsrp || '-'} dBm · RSRQ ${s.rsrq || '-'} dB · SINR ${s.sinr || '-'} dB`;
+	}
+
 	// perbarui hanya angka yang berubah cepat (RSRP/RSRQ/SINR) tiap 2 detik
 	async function liveSignal() {
 		if ((location.hash || '').indexOf('#modem') !== 0) return;
@@ -96,6 +153,8 @@
 			set('RSRP', s.rsrp);
 			set('RSRQ', s.rsrq);
 			set('SINR', s.sinr);
+			strengthBar(s.signal_pct, s.rsrp, s.rsrq, s.sinr);
+			updateBar(s);
 			const st = document.getElementById('mc-status');
 			if (st && /memuat/.test(st.textContent)) st.textContent = 'data sinyal langsung';
 		} catch (e) { /* diamkan */ }
@@ -170,6 +229,7 @@
 		}
 		const el = box();
 		const host = document.querySelector('main') || document.body;
+		strengthBar(null, null, null, null);
 		if (el.parentElement !== host || host.lastElementChild !== el) host.appendChild(el);
 		refresh();
 	}
