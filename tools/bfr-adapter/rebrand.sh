@@ -1,20 +1,57 @@
 #!/bin/sh
-# Ganti nama "BFR" -> "OpenWrt" pada bundel frontend BFR (dist/), tanpa mengubah kode.
-# Dijalankan sekali setiap kali dist/ diperbarui dari sumber BFR.
+# Sesuaikan teks frontend BFR untuk OpenWrt, tanpa mengubah kode:
+#  - nama "BFR" / "WEBUI-GO" -> OpenWrt
+#  - istilah Android/Magisk yang muncul di halaman login & shell -> OpenWrt
+#  - label tombol login -> Bahasa Indonesia
+# Tautan repo asli dipertahankan (atribusi GPL-3).
 set -e
 cd "$(dirname "$0")/dist"
 
-for f in index.html assets/*.js; do
+FILES="index.html assets/*.js"
+for f in $FILES; do
 	[ -f "$f" ] || continue
 	sed -i \
 		-e 's/BFR WEBUI/OPENWRT/g' \
 		-e 's/BFR Control Panel/OpenWrt Control Panel/g' \
 		-e 's/Android Root Control Panel/Panel Kendali OpenWrt/g' \
+		-e 's/Android Root System Control/Panel Kendali OpenWrt/g' \
+		-e 's/Magisk \/ KernelSU \/ APatch Module/rolex \&bull; MSM8917 \&bull; OpenWrt/g' \
+		-e 's/KernelSU \/ APatch Module/OpenWrt/g' \
+		-e 's/WEBUI-GO/OpenWrt/g' \
+		-e 's/ • Android / • OpenWrt /g' \
+		-e 's/Standard Android/OpenWrt 24.10.5/g' \
 		-e 's/Android Version/Versi Sistem/g' \
-		-e 's/BFR/OpenWrt/g' \
 		-e 's/Android Device/Perangkat/g' \
+		-e 's/Magisk \/ Root module index/Indeks modul sistem/g' \
+		-e 's/Custom Password Active/Sandi aktif/g' \
+		-e 's/Enter access password/Masukkan kata sandi panel/g' \
+		-e 's/Quick Access/Akses cepat/g' \
+		-e 's/Access Password/Kata Sandi/g' \
+		-e 's/ACCESS PASSWORD/KATA SANDI/g' \
+		-e 's/Sign In/Masuk/g' \
+		-e 's/APPEARANCE/TAMPILAN/g' \
+		-e 's/Appearance Studio/Studio Tampilan/g' \
+		-e 's/Appearance/Tampilan/g' \
+		-e 's/Connect & Community/Sumber \& Komunitas/g' \
+		-e 's/CONNECT & COMMUNITY/SUMBER \& KOMUNITAS/g' \
+		-e 's/SIGN IN/MASUK/g' \
+		-e 's/Toggle password visibility/Tampilkan sandi/g' \
+		-e 's/>B<\/div> <div>/>O<\/div> <div>/g' \
+		-e 's/BFR/OpenWrt/g' \
 		"$f"
 done
 
-grep -o "<title>[^<]*</title>" index.html
-echo "sisa 'BFR': $(grep -ro 'BFR' . | wc -l)  sisa 'Android': $(grep -ro 'Android' . | wc -l)"
+# footer: "OpenWrt &bull; rolex &bull; MSM8917 &bull; OpenWrt" -> tanpa ekor
+sed -i \
+	-e 's/OpenWrt-OpenWrt &bull; rolex &bull; MSM8917 &bull; OpenWrt/OpenWrt \&bull; rolex \&bull; MSM8917/g' \
+	-e 's/OpenWrt &bull; rolex &bull; MSM8917 &bull; OpenWrt/OpenWrt \&bull; rolex \&bull; MSM8917/g' \
+	-e 's/OpenWrt-OpenWrt/OpenWrt/g' \
+	index.html assets/*.js 2>/dev/null || true
+
+# tautan repo asli dikembalikan agar tidak 404 (atribusi)
+sed -i 's#latifangren/OpenWrt#latifangren/BFR-WEBUI-GO#g' index.html assets/*.js 2>/dev/null || true
+
+echo "judul      : $(grep -o '<title>[^<]*</title>' index.html)"
+echo "sisa BFR   : $(grep -oh 'BFR' index.html assets/*.js | wc -l) (hanya tautan repo)"
+echo "Android/js : $(grep -o 'Android' assets/index-*.js | wc -l)"
+echo "Magisk/js  : $(grep -o 'Magisk' assets/index-*.js | wc -l)"

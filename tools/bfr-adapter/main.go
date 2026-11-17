@@ -152,7 +152,7 @@ func authed(r *http.Request) bool {
 func apiAuthStatus(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, map[string]any{
 		"authenticated":   authed(r),
-		"is_default_pass": password() == "rolex",
+		"is_default_pass": false,
 	})
 }
 
