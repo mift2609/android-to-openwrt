@@ -36,7 +36,7 @@ for f in $FILES; do
 		-e 's/CONNECT & COMMUNITY/SUMBER \& KOMUNITAS/g' \
 		-e 's/SIGN IN/MASUK/g' \
 		-e 's/Toggle password visibility/Tampilkan sandi/g' \
-		-e 's/>B<\/div> <div>/>O<\/div> <div>/g' \
+		-e 's/>B<\/div>/>O<\/div>/g' \
 		-e 's/BFR/OpenWrt/g' \
 		"$f"
 done
