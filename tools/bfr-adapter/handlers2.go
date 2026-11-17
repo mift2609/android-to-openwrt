@@ -505,6 +505,21 @@ func apiSpeedtestRun(w http.ResponseWriter, r *http.Request) {
 
 /* ---------- files ---------- */
 
+// androidMap: pintasan bawaan UI BFR menunjuk path Android; di OpenWrt dipetakan
+// ke padanannya supaya tombolnya tetap berguna.
+var androidMap = []struct{ from, to string }{
+	{"/storage/emulated/0", "/"},
+	{"/storage/self/primary", "/"},
+	{"/sdcard", "/"},
+	{"/data/local/tmp", "/tmp"},
+	{"/data/adb/modules", "/etc"},
+	{"/data/adb", "/etc"},
+	{"/data", "/overlay"},
+	{"/system", "/"},
+	{"/vendor", "/"},
+	{"/mnt/sdcard", "/"},
+}
+
 func safePath(p string) (string, bool) {
 	if p == "" {
 		return "/", true
@@ -515,7 +530,21 @@ func safePath(p string) (string, bool) {
 	if !strings.HasPrefix(p, "/") {
 		return "", false
 	}
-	return filepath.Clean(p), true
+	p = filepath.Clean(p)
+	for _, m := range androidMap {
+		if p == m.from {
+			return m.to, true
+		}
+		if strings.HasPrefix(p, m.from+"/") {
+			rem := strings.TrimPrefix(p, m.from)
+			out := filepath.Clean(m.to + rem)
+			if !strings.HasPrefix(out, "/") {
+				out = "/" + out
+			}
+			return out, true
+		}
+	}
+	return p, true
 }
 
 func apiFilesList(w http.ResponseWriter, r *http.Request) {
