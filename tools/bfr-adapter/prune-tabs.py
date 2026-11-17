@@ -22,6 +22,25 @@ REMOVE = [
     ("partitions", "TabPartitions"),
 ]
 
+# sub-tab yang tidak berlaku (di dalam chunk TabModem)
+SUBTABS = [
+    "{id:`sim`,label:`Dual SIM Routing`,icon:h}",
+    "{id:`thermal`,label:`5G Thermal Telemetry`,icon:w}",
+    "{id:`at`,label:`AT Console Terminal`,icon:S}",
+]
+
+def prune_subtabs(d: Path) -> int:
+    n = 0
+    for f in d.glob("assets/TabModem-*.js"):
+        js = f.read_text()
+        for frag in SUBTABS:
+            if frag in js:
+                js = js.replace(frag + ",", "").replace(frag, "")
+                n += 1
+        f.write_text(js)
+    return n
+
+
 def main(dist: str) -> int:
     d = Path(dist)
     idx = next(d.glob("assets/index-*.js"), None)
@@ -58,6 +77,8 @@ def main(dist: str) -> int:
                 f.unlink()
         html.write_text(h)
 
+    nsub = prune_subtabs(d)
+    print("buang sub-tab Cellular:", nsub, "entri")
     print("buang tab dari bundel:")
     print("\n".join(laporan))
     print("  sisa chunk:", len(list(d.glob('assets/Tab*.js'))), "berkas")
