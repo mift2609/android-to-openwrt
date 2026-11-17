@@ -2,6 +2,7 @@
 //  1) sembunyikan hanya baris/tile kecil yang tak berlaku di router (jangan sampai kartunya ikut)
 //  2) buang kata "Android" pada nilai yang tampil
 (function () {
+	document.documentElement.setAttribute('data-fix', '1');
 	const HIDE_LABELS = [
 		'security patch', 'resolution & density', 'active governor policy',
 		'zram', 'selinux', 'sdk', 'android api',
@@ -9,7 +10,15 @@
 		'battery & power', 'battery status', 'battery'
 	];
 	// judul kartu yang seluruhnya tak berlaku -> sembunyikan kartunya
-	const HIDE_CARDS = ['cpu scaling & scheduling policy', 'battery & power'];
+	const HIDE_CARDS = ['cpu scaling & scheduling policy', 'battery & power',
+		// tab Cellular: kartu vendor Android yang tidak berlaku untuk rolex
+		'target architecture & hardware compatibility', 'hardware band locking',
+		'carrier telemetry integration'];
+	// sub-tab Cellular yang tidak berlaku (modem rolex: satu SIM, tanpa sensor 5G, tanpa AT)
+	const HIDE_TABS = ['sim', 'sim slot', 'dual sim routing', 'thermal', '5g thermal telemetry',
+		'at', 'at terminal', 'at console', 'at console terminal'];
+	// pola teks yang menandakan baris kosong (mis. "N/A (No TA broadcast)")
+	const HIDE_PATTERNS = [/\bno ta broadcast\b/i, /\bn\/a \(/i, /\bmasked$/i];
 	const HIDE_VALUES = ['n/a', '-', '--', '(-)', 'tidak ada baterai', 'standard android'];
 	const HIDE_CHIPS = ['0%'];
 	// menu/tab yang tidak mungkin di rolex (NAS & Scrcpy sengaja TIDAK dihapus)
@@ -31,6 +40,19 @@
 		return b;
 	}
 
+	// Untuk judul kartu: naik selama wadah masih diawali judul itu, lalu sembunyikan wadah terluarnya.
+	function cardBox(el, title) {
+		let b = el, best = el;
+		for (let i = 0; i < 8 && b.parentElement; i++) {
+			b = b.parentElement;
+			const t = (b.textContent || '').trim().toLowerCase();
+			if (!t.startsWith(title)) break;
+			best = b;
+			if (t.length > 1200) break;
+		}
+		return best;
+	}
+
 	function hide(el) {
 		const b = box(el);
 		if (b && b.style.display !== 'none') b.style.display = 'none';
@@ -45,9 +67,24 @@
 			if (!raw) continue;
 			const low = raw.toLowerCase();
 
-			if (HIDE_CARDS.some(h => low === h || low.startsWith(h))) {
-				const card = el.closest('.bg-card, section, article') || box(el);
-				if (card && card.style.display !== 'none') card.style.display = 'none';
+			if (HIDE_PATTERNS.some(rx => rx.test(raw))) { hide(el); continue; }
+			if (HIDE_TABS.includes(low)) {
+				const btn = el.closest('button, [role="tab"], li') || el;
+				btn.style.display = 'none';
+				continue;
+			}
+			const cardHit = HIDE_CARDS.find(h => low === h || low.startsWith(h));
+			if (cardHit) {
+				// sembunyikan SEMUA wadah yang teksnya masih diawali judul kartu itu
+				let b = el;
+				for (let i = 0; i < 8 && b; i++) {
+					const t = (b.textContent || '').trim().toLowerCase();
+					if (!t.startsWith(cardHit)) break;
+					if (b.style) b.style.display = 'none';
+					b = b.parentElement;
+				}
+				const wrap = el.closest('section, article');
+				if (wrap && wrap.style && wrap.style.display !== 'none') wrap.style.display = 'none';
 				continue;
 			}
 			if (HIDE_LABELS.some(h => low === h || low.startsWith(h))) { hide(el); continue; }
@@ -71,13 +108,25 @@
 						.replace(/\/data\/adb\/bfr_webui_go\/data\//, '/etc/');
 					continue;
 				}
+				if (/dual-sim routing/i.test(raw)) {
+					el.textContent = raw
+						.replace(/,\s*Dual-SIM routing,?\s*and thermal telemetry\.?/i, '.')
+						.replace(/Dual-SIM routing,?\s*/i, '')
+						.replace(/,\s*\./g, '.')
+						.trim();
+					continue;
+				}
+				if (/^Carrier Telemetry Integration$/i.test(raw)) {
+					el.textContent = 'Pengukuran Sinyal Radio';
+					continue;
+				}
 				if (/Logcat/i.test(raw)) {
 					el.textContent = raw.replace(/Logcat/gi, 'log sistem');
 					continue;
 				}
 				if (/\(API[^)]*\)/i.test(raw)) {
 					const cleaned = raw.replace(/\s*\(API[^)]*\)/i, '').trim();
-					if (cleaned !== raw) { el.textContent = cleaned; return; }
+					if (cleaned !== raw) { el.textContent = cleaned; continue; }
 				}
 				if (/android\s+openwrt/i.test(raw)) {
 					el.textContent = raw.replace(/\s*android\s+/i, ' ').trim();
