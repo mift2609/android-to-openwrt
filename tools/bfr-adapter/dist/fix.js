@@ -7,7 +7,7 @@
 		'security patch', 'resolution & density', 'active governor policy',
 		'zram', 'selinux', 'sdk', 'android api',
 		'charge level', 'battery temp', 'battery level', 'health', 'voltage',
-		'battery & power', 'battery status', 'battery'
+		'battery & power', 'battery status'
 	];
 	// judul kartu yang seluruhnya tak berlaku -> sembunyikan kartunya
 	const HIDE_CARDS = ['cpu scaling & scheduling policy', 'battery & power',
@@ -20,11 +20,11 @@
 	// pola teks yang menandakan baris kosong (mis. "N/A (No TA broadcast)")
 	const HIDE_PATTERNS = [/\bno ta broadcast\b/i, /\bn\/a \(/i, /\bmasked$/i];
 	const HIDE_VALUES = ['n/a', '-', '--', '(-)', 'tidak ada baterai', 'standard android'];
-	const HIDE_CHIPS = ['0%'];
+	const HIDE_CHIPS = []; // sengaja kosong: chip persen jangan disembunyikan (risiko kena kartu lain)
 	// menu/tab yang tidak mungkin di rolex (NAS & Scrcpy sengaja TIDAK dihapus)
 	const HIDE_NAV = [
 		'snapdragon qmi', 'samsung ril', 'google tensor',
-		'charger', 'modules', 'partitions', 'telegram'
+		'charger', 'modules', 'partitions'
 	];
 
 	function len(x) { return (x.textContent || '').trim().length; }
@@ -33,9 +33,11 @@
 	// seputar teks elemen itu (label + nilai), bukan wadah tetangga/kartu.
 	function box(el) {
 		let b = el;
-		// naik hanya kalau wadah induk menambah sedikit teks (artinya cuma berisi nilai pendamping)
-		while (b.parentElement && len(b.parentElement) <= len(b) + 30 && b.parentElement.children.length <= 4) {
+		let naik = 0;
+		// naik hanya kalau wadah induk menambah sedikit teks (cuma nilai pendamping), maksimum 3 tingkat
+		while (b.parentElement && naik < 3 && len(b.parentElement) <= len(b) + 12 && b.parentElement.children.length <= 4) {
 			b = b.parentElement;
+			naik++;
 		}
 		return b;
 	}
@@ -53,9 +55,12 @@
 		return best;
 	}
 
-	function hide(el) {
+	function hide(el, why) {
 		const b = box(el);
-		if (b && b.style.display !== 'none') b.style.display = 'none';
+		if (b && b.style.display !== 'none') {
+			b.style.display = 'none';
+			b.setAttribute('data-why', why + ' :: ' + (el.textContent || '').trim().slice(0, 30));
+		}
 	}
 
 	function tidy() {
@@ -67,10 +72,15 @@
 			if (!raw) continue;
 			const low = raw.toLowerCase();
 
-			if (HIDE_PATTERNS.some(rx => rx.test(raw))) { hide(el); continue; }
+			// pola hanya untuk elemen kecil (jangan pernah mengenai pembungkus halaman)
+			if (raw.length <= 120 && el.children.length <= 2) {
+				const pat = HIDE_PATTERNS.find(rx => rx.test(raw));
+				if (pat) { hide(el, 'pola'); continue; }
+			}
 			if (HIDE_TABS.includes(low)) {
 				const btn = el.closest('button, [role="tab"], li') || el;
 				btn.style.display = 'none';
+				btn.setAttribute('data-why', 'subtab :: ' + low.slice(0, 24));
 				continue;
 			}
 			const cardHit = HIDE_CARDS.find(h => low === h || low.startsWith(h));
@@ -80,20 +90,29 @@
 				for (let i = 0; i < 8 && b; i++) {
 					const t = (b.textContent || '').trim().toLowerCase();
 					if (!t.startsWith(cardHit)) break;
-					if (b.style) b.style.display = 'none';
+					if (b.style) { b.style.display = 'none'; b.setAttribute('data-why', 'kartu :: ' + cardHit.slice(0, 24)); }
 					b = b.parentElement;
 				}
 				const wrap = el.closest('section, article');
 				if (wrap && wrap.style && wrap.style.display !== 'none') wrap.style.display = 'none';
 				continue;
 			}
-			if (HIDE_LABELS.some(h => low === h || low.startsWith(h))) { hide(el); continue; }
-			if (HIDE_VALUES.includes(low)) { hide(el); continue; }
-			if (HIDE_CHIPS.includes(low) && el.children.length === 0) { hide(el); continue; }
+			if (raw.length <= 120 && el.children.length <= 2) {
+				const lab = HIDE_LABELS.find(h => low === h || low.startsWith(h));
+				if (lab) { hide(el, 'label:' + lab.slice(0, 16)); continue; }
+				if (HIDE_VALUES.includes(low)) { hide(el, 'nilai'); continue; }
+			}
+			if (HIDE_CHIPS.includes(low) && el.children.length === 0) {
+				const chip = el.closest('span, div') || el;
+				if (chip.style) { chip.style.display = 'none'; chip.setAttribute('data-why', 'chip'); }
+				else if (el.style) el.style.display = 'none';
+				continue;
+			}
 			if (HIDE_NAV.includes(low)) {
-				// item menu: sembunyikan tautan/kartu pilihannya, bukan seluruh dropdown
+				// hanya berlaku untuk item MENU (bukan tombol biasa seperti tautan Telegram di login)
 				const item = el.closest('a, button, [role="menuitem"], li') || el;
-				item.style.display = 'none';
+				const inMenu = !!item.closest('nav, [role="menu"], [role="menubar"], header, .drop, .dropdown');
+				if (inMenu) { item.style.display = 'none'; item.setAttribute('data-why', 'menu'); }
 				continue;
 			}
 
@@ -118,6 +137,10 @@
 				}
 				if (/^Carrier Telemetry Integration$/i.test(raw)) {
 					el.textContent = 'Pengukuran Sinyal Radio';
+					continue;
+				}
+				if (/OpenWrt\s+OpenWrt/i.test(raw)) {
+					el.textContent = raw.replace(/OpenWrt\s+OpenWrt/gi, 'OpenWrt');
 					continue;
 				}
 				if (/Logcat/i.test(raw)) {
