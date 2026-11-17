@@ -12,12 +12,8 @@
 	const api = async (url, opt) => {
 		const r = await fetch(url, Object.assign({ credentials: 'include' }, opt || {}));
 		if (r.status === 401 || r.status === 403) {
-			// sesi habis / belum masuk: bersihkan dan jangan tampilkan kartu
-			const c = document.getElementById(ID);
-			if (c) c.remove();
-			const b = document.getElementById('mm-bar');
-			if (b) b.remove();
-			throw new Error('belum masuk');
+			say('sesi habis (' + r.status + ') — masuk ulang lalu buka lagi');
+			throw new Error('sesi habis');
 		}
 		if (!r.ok) throw new Error('HTTP ' + r.status);
 		return r.json();
@@ -238,8 +234,14 @@
 			if (s) last.sig = s;
 			barBawaan();
 			fill();
-			say('diperbarui ' + new Date().toLocaleTimeString('id-ID', { hour12: false }) +
-				(last.rot && last.rot.mins ? ' • rotasi ' + last.rot.mins + ' mnt' : ' • rotasi mati'));
+			const jam = new Date().toLocaleTimeString('id-ID', { hour12: false });
+			if (!c && !s) {
+				say('server tidak menjawab di ' + location.host + ' (cell & sinyal kosong) — cek /etc/init.d/bfr-adapter status');
+			} else {
+				say('diperbarui ' + jam +
+					(c ? '' : ' • data sel kosong') + (s ? '' : ' • data sinyal kosong') +
+					(last.rot && last.rot.mins ? ' • rotasi ' + last.rot.mins + ' mnt' : ' • rotasi mati'));
+			}
 
 			// data tambahan (lebih lambat) menyusul, tanpa menahan tampilan
 			if (Date.now() - (last.bandsAt || 0) > 60000) {
