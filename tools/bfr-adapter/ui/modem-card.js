@@ -119,25 +119,46 @@
 		setTimeout(refresh, 2500);
 	}
 
+	const FIELDS = ['PCI', 'EARFCN', 'BAND', 'CELL ID', 'TAC', 'RSRP', 'RSRQ', 'SINR', 'OPERATOR'];
+
+	// buat kotak nilai sekali saja; setelah itu hanya angkanya yang diperbarui
+	function ensureGrid() {
+		const grid = document.querySelector('#mc-cell');
+		if (!grid) return null;
+		if (grid.children.length !== FIELDS.length) {
+			grid.innerHTML = FIELDS.map(k =>
+				`<div style="background:#10141d;border:1px solid #272e3c;border-radius:7px;padding:6px 8px">
+				   <div style="font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8b93a5">${k}</div>
+				   <div style="font-weight:700">-</div></div>`).join('');
+		}
+		return grid;
+	}
+
+	function put(grid, label, val) {
+		if (val == null || val === '' || val === '-') return; // kosong sesaat: jangan hapus angka lama
+		const box = [...grid.children].find(c => (c.firstElementChild || {}).textContent === label);
+		if (box && box.lastElementChild) box.lastElementChild.textContent = String(val);
+	}
+
 	async function refresh() {
 		const el = document.getElementById(ID);
 		if (!el) return;
+		const grid = ensureGrid();
+		if (!grid) return;
 		try {
 			const c = await api('/api/modem/cell');
-			const cell = el.querySelector('#mc-cell');
-			const kv = [
-				['PCI', c.pci], ['EARFCN', c.earfcn], ['Band', c.band],
-				['Cell ID', c.cell_id], ['TAC', c.tac_hex || c.tac],
-				['RSRP', c.rsrp], ['RSRQ', c.rsrq], ['SINR', c.sinr], ['Operator', c.operator]
-			];
-			cell.innerHTML = kv.map(([k, v]) =>
-				`<div style="background:#10141d;border:1px solid #272e3c;border-radius:7px;padding:6px 8px">
-				   <div style="font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8b93a5">${k}</div>
-				   <div style="font-weight:700">${v == null || v === '' ? '-' : String(v)}</div></div>`).join('');
+			put(grid, 'PCI', c.pci);
+			put(grid, 'EARFCN', c.earfcn);
+			put(grid, 'BAND', c.band);
+			put(grid, 'CELL ID', c.cell_id);
+			put(grid, 'TAC', c.tac_hex || c.tac);
+			put(grid, 'RSRP', c.rsrp);
+			put(grid, 'RSRQ', c.rsrq);
+			put(grid, 'SINR', c.sinr);
+			put(grid, 'OPERATOR', c.operator);
 			const rot = await api('/api/modem/rotate');
 			el.querySelector('#mc-mins').value = String(rot.mins || 0);
-			say('data segar ' + (c.fresh ? 'ya' : 'cache') + ' • lock: ' +
-				(rot.mins ? 'rotasi ' + rot.mins + ' mnt' : 'rotasi mati'));
+			say('data ' + (c.fresh ? 'segar' : 'cache') + ' • ' + (rot.mins ? 'rotasi ' + rot.mins + ' mnt' : 'rotasi mati'));
 		} catch (e) { say('gagal memuat: ' + e.message); }
 	}
 
@@ -170,7 +191,7 @@
 		refresh();
 	}
 	setInterval(autoRefresh, 20000);      // segarkan seluruh halaman tiap 20 s
-	setInterval(liveSignal, 2000);        // nilai yang cepat berubah tiap 2 s
+	setInterval(liveSignal, 10000);       // nilai sinyal tiap 10 s (cukup: modem sendiri memperbarui ~beberapa detik)
 	document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
 
 	document.addEventListener('DOMContentLoaded', () => { mount(); keepLast(); });
