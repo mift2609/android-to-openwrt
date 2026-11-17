@@ -84,10 +84,9 @@ func main() {
 	mux.HandleFunc("/api/vnstat/reset", apiVnstatReset)
 	mux.HandleFunc("/api/ssh/status", apiSSHStatus)
 	mux.HandleFunc("/api/kernel/status", apiKernelStatus)
-	mux.HandleFunc("/api/kernel/apply", apiKernelSet)
-	mux.HandleFunc("/api/kernel/governor", apiKernelSet)
-	mux.HandleFunc("/api/kernel/vm", apiKernelSet)
-	mux.HandleFunc("/api/kernel/profile", apiKernelSet)
+	mux.HandleFunc("/api/kernel/profile", apiKernelProfile)
+	mux.HandleFunc("/api/kernel/cluster", apiKernelCluster)
+	mux.HandleFunc("/api/kernel/vm", apiKernelVM)
 
 	// proxy, tunnel, speedtest
 	mux.HandleFunc("/api/proxy/status", apiProxyStatus)

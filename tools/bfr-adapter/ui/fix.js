@@ -66,6 +66,11 @@
 					el.textContent = raw.replace(/\bAndroid\b/g, 'OpenWrt');
 					continue;
 				}
+				if (raw.indexOf('/data/adb/') === 0 || raw.indexOf('Persistent in /data/adb') === 0) {
+					el.textContent = raw.replace(/\/data\/adb\/bfr_webui_go\/data\/kernel_config\.json/, '/etc/sysctl.d/98-bfr-kernel.conf')
+						.replace(/\/data\/adb\/bfr_webui_go\/data\//, '/etc/');
+					continue;
+				}
 				if (/Logcat/i.test(raw)) {
 					el.textContent = raw.replace(/Logcat/gi, 'log sistem');
 					continue;

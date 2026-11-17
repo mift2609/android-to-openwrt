@@ -201,42 +201,128 @@ func apiKernelStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func apiKernelSet(w http.ResponseWriter, r *http.Request) {
+// apiKernelProfile: preset cepat (powersave / balanced / performance).
+func apiKernelProfile(w http.ResponseWriter, r *http.Request) {
 	if !guard(w, r) || r.Method != http.MethodPost {
 		return
 	}
 	var b struct {
-		Governor    string `json:"governor"`
-		Swappiness  *int   `json:"swappiness"`
-		TCPCongest  string `json:"tcp_congestion"`
-		Profile     string `json:"profile"`
-		MinFreq     *int   `json:"min_freq"`
-		MaxFreq     *int   `json:"max_freq"`
+		Profile string `json:"profile"`
 	}
 	json.NewDecoder(r.Body).Decode(&b)
-	msg := []string{}
+	var msg string
+	switch strings.ToLower(b.Profile) {
+	case "performance":
+		writeAllGovernors("performance")
+		run(8, "sh", "-c", "for p in /sys/devices/system/cpu/cpufreq/policy*; do cat $p/cpuinfo_max_freq > $p/scaling_max_freq; done")
+		msg = "Profil PERFORMANCE: governor performance, frekuensi maksimum"
+	case "powersave", "battery", "battery saver":
+		writeAllGovernors("powersave")
+		run(8, "sh", "-c", "for p in /sys/devices/system/cpu/cpufreq/policy*; do cat $p/cpuinfo_min_freq > $p/scaling_max_freq; done")
+		msg = "Profil POWERSAVE: governor powersave, frekuensi minimum"
+	case "balanced", "seimbang":
+		writeAllGovernors("schedutil")
+		run(8, "sh", "-c", "for p in /sys/devices/system/cpu/cpufreq/policy*; do cat $p/cpuinfo_max_freq > $p/scaling_max_freq; done")
+		msg = "Profil BALANCED: governor schedutil, batas frekuensi penuh"
+	default:
+		jsonOut(w, map[string]any{"success": false, "error": "profil tidak dikenal: " + b.Profile})
+		return
+	}
+	jsonOut(w, map[string]any{"success": true, "message": msg, "profile": strings.ToLower(b.Profile)})
+}
+
+func writeAllGovernors(gov string) {
+	for _, p := range globPolicies() {
+		os.WriteFile(p+"/scaling_governor", []byte(gov), 0644)
+	}
+}
+
+func globPolicies() []string {
+	ents, _ := filepath.Glob("/sys/devices/system/cpu/cpufreq/policy*")
+	sort.Strings(ents)
+	return ents
+}
+
+// apiKernelCluster: atur satu cluster (policy) — governor / min / max.
+func apiKernelCluster(w http.ResponseWriter, r *http.Request) {
+	if !guard(w, r) || r.Method != http.MethodPost {
+		return
+	}
+	var b struct {
+		PolicyID int    `json:"policy_id"`
+		Governor string `json:"governor"`
+		MinFreq  int    `json:"min_freq"`
+		MaxFreq  int    `json:"max_freq"`
+	}
+	json.NewDecoder(r.Body).Decode(&b)
+	base := "/sys/devices/system/cpu/cpufreq/policy" + strconv.Itoa(b.PolicyID)
+	if _, err := os.Stat(base); err != nil {
+		jsonOut(w, map[string]any{"success": false, "error": "cluster tidak ada: " + base})
+		return
+	}
+	steps := []string{}
+	if b.MaxFreq > 0 {
+		writeSys(base+"/scaling_max_freq", strconv.Itoa(b.MaxFreq))
+		steps = append(steps, "max="+strconv.Itoa(b.MaxFreq))
+	}
+	if b.MinFreq > 0 {
+		writeSys(base+"/scaling_min_freq", strconv.Itoa(b.MinFreq))
+		steps = append(steps, "min="+strconv.Itoa(b.MinFreq))
+	}
 	if b.Governor != "" {
-		out := run(10, "sh", "-c", "for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "+san(b.Governor)+" > $p/scaling_governor; done")
-		_ = out
-		msg = append(msg, "governor="+b.Governor)
+		writeSys(base+"/scaling_governor", b.Governor)
+		steps = append(steps, "governor="+b.Governor)
+	}
+	jsonOut(w, map[string]any{"success": true, "message": "Cluster " + strconv.Itoa(b.PolicyID) + ": " + strings.Join(steps, ", ")})
+}
+
+func writeSys(path, val string) {
+	if err := os.WriteFile(path, []byte(val), 0644); err != nil {
+		run(6, "sh", "-c", "echo "+san(val)+" > "+path)
+	}
+}
+
+// apiKernelVM: parameter VM + TCP, sekaligus dipersistensikan.
+func apiKernelVM(w http.ResponseWriter, r *http.Request) {
+	if !guard(w, r) || r.Method != http.MethodPost {
+		return
+	}
+	var b struct {
+		Swappiness         *int   `json:"swappiness"`
+		VFSCachePressure   *int   `json:"vfs_cache_pressure"`
+		DirtyRatio         *int   `json:"dirty_ratio"`
+		DirtyBackground    *int   `json:"dirty_background_ratio"`
+		TCPCongestion      string `json:"tcp_congestion"`
+	}
+	json.NewDecoder(r.Body).Decode(&b)
+	saved := []string{}
+	set := func(path, val string) {
+		writeSys(path, val)
 	}
 	if b.Swappiness != nil {
-		os.WriteFile("/proc/sys/vm/swappiness", []byte(strconv.Itoa(*b.Swappiness)), 0644)
-		msg = append(msg, "swappiness="+strconv.Itoa(*b.Swappiness))
+		set("/proc/sys/vm/swappiness", strconv.Itoa(*b.Swappiness))
+		saved = append(saved, "vm.swappiness="+strconv.Itoa(*b.Swappiness))
 	}
-	if b.TCPCongest != "" {
-		os.WriteFile("/proc/sys/net/ipv4/tcp_congestion_control", []byte(san(b.TCPCongest)), 0644)
-		msg = append(msg, "tcp="+b.TCPCongest)
+	if b.VFSCachePressure != nil {
+		set("/proc/sys/vm/vfs_cache_pressure", strconv.Itoa(*b.VFSCachePressure))
+		saved = append(saved, "vm.vfs_cache_pressure="+strconv.Itoa(*b.VFSCachePressure))
 	}
-	if b.MaxFreq != nil && *b.MaxFreq > 0 {
-		run(10, "sh", "-c", "for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "+strconv.Itoa(*b.MaxFreq)+" > $p/scaling_max_freq; done")
-		msg = append(msg, "max_freq="+strconv.Itoa(*b.MaxFreq))
+	if b.DirtyRatio != nil {
+		set("/proc/sys/vm/dirty_ratio", strconv.Itoa(*b.DirtyRatio))
+		saved = append(saved, "vm.dirty_ratio="+strconv.Itoa(*b.DirtyRatio))
 	}
-	if b.MinFreq != nil && *b.MinFreq > 0 {
-		run(10, "sh", "-c", "for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "+strconv.Itoa(*b.MinFreq)+" > $p/scaling_min_freq; done")
-		msg = append(msg, "min_freq="+strconv.Itoa(*b.MinFreq))
+	if b.DirtyBackground != nil {
+		set("/proc/sys/vm/dirty_background_ratio", strconv.Itoa(*b.DirtyBackground))
+		saved = append(saved, "vm.dirty_background_ratio="+strconv.Itoa(*b.DirtyBackground))
 	}
-	jsonOut(w, map[string]any{"success": true, "message": "Diterapkan: " + strings.Join(msg, ", ")})
+	if b.TCPCongestion != "" {
+		set("/proc/sys/net/ipv4/tcp_congestion_control", san(b.TCPCongestion))
+		saved = append(saved, "net.ipv4.tcp_congestion_control="+san(b.TCPCongestion))
+	}
+	if len(saved) > 0 {
+		os.WriteFile("/etc/sysctl.d/98-bfr-kernel.conf", []byte(strings.Join(saved, "\n")+"\n"), 0644)
+	}
+	jsonOut(w, map[string]any{"success": true, "message": "Diterapkan & disimpan: " + strings.Join(saved, ", ")})
 }
 
 /* ---------- proxy (OpenClash / mihomo) ---------- */
