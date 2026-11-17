@@ -96,7 +96,15 @@ func apiModemCell(w http.ResponseWriter, r *http.Request) {
 		"rssi":     dec(pick("rssi")),
 		"operator": pick("operator_name", "operator"),
 		"mode":     pick("mode", "connt"),
-		"ip":       pick("ip", "ipv4"),
+		"ip": func() any {
+			if v := pick("ip", "ipv4"); v != nil {
+				return v
+			}
+			return firstField(run(6, "ip", "-4", "-o", "addr", "show", "wwan0"))
+		}(),
+		"gateway": firstField(run(6, "ip", "-4", "route", "show", "dev", "wwan0")),
+		"dns": strings.Join(strings.Fields(run(6, "sh", "-c",
+			"grep -h nameserver /tmp/resolv.conf.d/resolv.conf.auto /etc/resolv.conf 2>/dev/null | awk '{print $2}' | sort -u | tr '\\n' ' '")), " "),
 		"fresh":    time.Since(cellAt).Seconds() < 120,
 	})
 }
@@ -225,4 +233,23 @@ func apiModemAction(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonOut(w, map[string]any{"success": false, "error": "aksi tidak dikenal: " + b.Action})
 	}
+}
+
+// firstField: ambil potongan yang berguna dari keluaran perintah (mis. IP pada baris "inet 10.x/30")
+func firstField(out string) string {
+	for _, ln := range strings.Split(out, "\n") {
+		f := strings.Fields(ln)
+		for i, w := range f {
+			if w == "inet" && i+1 < len(f) {
+				return f[i+1]
+			}
+			if w == "via" && i+1 < len(f) {
+				return f[i+1]
+			}
+			if w == "src" && i+1 < len(f) {
+				return f[i+1]
+			}
+		}
+	}
+	return ""
 }

@@ -46,6 +46,7 @@
 		const warna = b >= 70 ? '#34d399' : b >= 45 ? '#fbbf24' : b >= 20 ? '#fb923c' : '#f87171';
 		const label = b >= 70 ? 'kuat' : b >= 45 ? 'sedang' : b >= 20 ? 'lemah' : 'sangat lemah';
 		const c = last.cell || {};
+		const s = last.sig || {};
 		const kotak = (k, v) =>
 			`<div style="background:#10141d;border:1px solid #272e3c;border-radius:7px;padding:7px 9px">
 			   <div style="font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8b93a5">${k}</div>
@@ -78,6 +79,18 @@
 		    ${kotak('EARFCN', c.earfcn)}
 		    ${kotak('Cell ID', c.cell_id)}
 		    ${kotak('TAC', c.tac_hex || c.tac)}
+		  </div>
+
+		  <div style="border-top:1px dashed #272e3c;padding-top:12px;margin-bottom:12px">
+		    <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8b93a5;margin-bottom:7px">Jaringan &amp; SIM</div>
+		    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px">
+		      ${kotak('IP modem', c.ip)}
+		      ${kotak('Gateway', c.gateway)}
+		      ${kotak('DNS', c.dns)}
+		      ${kotak('IMEI', s.imei)}
+		      ${kotak('Registrasi', s.registration)}
+		      ${kotak('Data (PS)', s.ps_state)}
+		    </div>
 		  </div>
 
 		  <div style="border-top:1px dashed #272e3c;padding-top:12px;margin-bottom:12px">
@@ -151,6 +164,12 @@
 		set('EARFCN', c.earfcn);
 		set('Cell ID', c.cell_id);
 		set('TAC', c.tac_hex || c.tac);
+		set('IP modem', c.ip);
+		set('Gateway', c.gateway);
+		set('DNS', c.dns);
+		set('IMEI', s.imei);
+		set('Registrasi', s.registration);
+		set('Data (PS)', s.ps_state);
 
 		const b = Math.round(Number(s.signal_pct) || 0);
 		const warna = b >= 70 ? '#34d399' : b >= 45 ? '#fbbf24' : b >= 20 ? '#fb923c' : '#f87171';
@@ -241,7 +260,13 @@
 	setInterval(() => { if (onModem() && !document.getElementById(ID)) mount(); }, 1500);
 	new MutationObserver(() => { if (onModem() && !document.getElementById(ID)) mount(); })
 		.observe(document.body, { childList: true, subtree: true });
-	document.addEventListener('DOMContentLoaded', mount);
-	window.addEventListener('hashchange', () => { mount(); setTimeout(() => { mount(); load(); }, 1500); });
-	if (document.readyState !== 'loading') mount();
+	function pasang() {
+		if (!onModem()) return;
+		mount();
+		[300, 1000, 2500, 5000].forEach(t => setTimeout(() => { if (onModem() && !document.getElementById(ID)) mount(); }, t));
+	}
+	document.addEventListener('DOMContentLoaded', pasang);
+	window.addEventListener('hashchange', pasang);
+	document.addEventListener('visibilitychange', () => { if (!document.hidden) pasang(); });
+	if (document.readyState !== 'loading') pasang();
 })();
