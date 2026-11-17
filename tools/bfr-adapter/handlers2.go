@@ -333,7 +333,21 @@ type proxyCore struct{ ID, Label, Svc, Bin string }
 
 var proxyCores = []proxyCore{
 	{"mihomo", "Mihomo (nikki)", "nikki", "/usr/bin/mihomo"},
-	{"openclash", "OpenClash", "openclash", "/etc/openclash/core/clash_meta"},
+	{"openclash", "OpenClash", "openclash", "/etc/openclash/clash"},
+}
+
+// coreEnable: nikki pakai nikki.config.enabled, openclash pakai config.enable;
+// tanpa ini init.d openclash menolak start ("Already Stop!").
+func coreEnable(c proxyCore, on bool) {
+	v := "0"
+	if on {
+		v = "1"
+	}
+	key := "openclash.config.enable"
+	if c.Svc == "nikki" {
+		key = "nikki.config.enabled"
+	}
+	run(6, "sh", "-c", "uci set "+key+"='"+v+"'; uci commit "+c.Svc)
 }
 
 func clashAPI(path string) string {
@@ -361,9 +375,12 @@ func coreMem(pid string) string {
 	}
 	ctx, cancel := ctxTimeout(4)
 	defer cancel()
-	b, _ := exec.CommandContext(ctx, "ps", "-o", "rss=", "-p", pid).Output()
-	if kb, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && kb > 0 {
-		return strconv.Itoa(kb/1024) + " MB"
+	b, _ := exec.CommandContext(ctx, "grep", "-m1", "VmRSS", "/proc/"+pid+"/status").Output()
+	f := strings.Fields(string(b))
+	if len(f) >= 2 {
+		if kb, err := strconv.Atoi(f[1]); err == nil && kb > 0 {
+			return strconv.Itoa(kb/1024) + " MB"
+		}
 	}
 	return ""
 }
@@ -454,12 +471,15 @@ func apiProxyControl(w http.ResponseWriter, r *http.Request) {
 	switch b.Action {
 	case "switch_core":
 		run(6, "sh", "-c", "uci set bfr.proxy=proxy; uci set bfr.proxy.core='"+target.ID+"'; uci commit bfr")
+		coreEnable(target, true)
 		for _, c := range proxyCores {
-			if c.ID != target.ID && corePid(c) != "" {
-				run(40, "/etc/init.d/"+c.Svc, "stop")
+			if c.ID != target.ID {
+				coreEnable(c, false)
+				if corePid(c) != "" {
+					run(40, "/etc/init.d/"+c.Svc, "stop")
+				}
 			}
 		}
-		run(10, "/etc/init.d/"+target.Svc, "enable")
 		out := run(90, "/etc/init.d/"+target.Svc, "restart")
 		jsonOut(w, map[string]any{"success": true, "core": target.ID, "message": target.Label + ": " + orDash(out)})
 	case "start", "stop", "restart", "reload":
@@ -467,6 +487,7 @@ func apiProxyControl(w http.ResponseWriter, r *http.Request) {
 		if act == "reload" {
 			act = "restart"
 		}
+		coreEnable(target, act != "stop")
 		out := run(90, "/etc/init.d/"+target.Svc, act)
 		jsonOut(w, map[string]any{"success": true, "core": target.ID, "message": target.Label + " " + act + ": " + orDash(out)})
 	default:

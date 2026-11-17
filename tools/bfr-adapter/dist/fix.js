@@ -1,3 +1,4 @@
+// build 261117-1407
 // Penyesuaian tampilan untuk OpenWrt (dijalankan di browser, kode BFR tidak diubah):
 //  1) sembunyikan hanya baris/tile kecil yang tak berlaku di router (jangan sampai kartunya ikut)
 //  2) buang kata "Android" pada nilai yang tampil

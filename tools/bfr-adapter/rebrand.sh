@@ -56,12 +56,18 @@ sed -i 's#latifangren/OpenWrt#latifangren/BFR-WEBUI-GO#g' index.html assets/*.js
 
 # suntikkan penyesuaian tampilan (sembunyikan baris kosong, buang kata "Android")
 cp ../ui/fix.js fix.js
+# cap versi: URL skrip berubah setiap build -> cache browser lama tidak terpakai
+CAP=$(date +%y%m%d-%H%M)
+sed -i "1s#^#// build $CAP\n#" modem-page.js fix.js 2>/dev/null || true
 cp ../ui/modem-page.js modem-page.js   # halaman Cellular: ganti isi bawaan dengan kartu sendiri
-if ! grep -q 'src="/fix.js"' index.html; then
-	sed -i 's#</body>#<script src="/fix.js"></script></body>#' index.html
+sed -i "1s#^#// build $CAP\n#" modem-page.js
+echo "$CAP" > versi.txt
+echo "cap versi  : $CAP"
+if ! grep -q 'src="/fix.js?v=' index.html; then
+	sed -i 's#</body>#<script src="/fix.js?v='"$CAP"'"></script></body>#' index.html
 fi
-if ! grep -q 'src="/modem-page.js"' index.html; then
-	sed -i 's#</body>#<script src="/modem-page.js"></script></body>#' index.html
+if ! grep -q 'src="/modem-page.js?v=' index.html; then
+	sed -i 's#</body>#<script src="/modem-page.js?v='"$CAP"'"></script></body>#' index.html
 fi
 
 python3 ../prune-tabs.py . || echo "(prune gagal, lanjut)"

@@ -24,6 +24,7 @@
 	});
 	// halaman login BFR bisa sudah ber-hash #modem (tautan langsung) -> jangan pasang apa pun di situ
 	const sudahMasuk = () => !document.querySelector('input[type=password]') && !!document.querySelector('main');
+	const CAP_VERSI = (document.querySelector('script[src*="modem-page.js?v="]') || {src: ''}).src.split('?v=')[1] || '-';
 	const onModem = () => sudahMasuk() && (location.hash || '').indexOf('#modem') === 0;
 
 	function leaf(rx) {
@@ -283,7 +284,7 @@
 			if (!c && !s) {
 				say('server tidak menjawab di ' + location.host + ' (cell & sinyal kosong) — cek /etc/init.d/bfr-adapter status');
 			} else {
-				say('diperbarui ' + jam +
+				say('diperbarui ' + jam + ' • v' + CAP_VERSI +
 					(c ? '' : ' • data sel kosong') + (s ? '' : ' • data sinyal kosong') +
 					(last.rot && last.rot.mins ? ' • rotasi ' + last.rot.mins + ' mnt' : ' • rotasi mati'));
 			}

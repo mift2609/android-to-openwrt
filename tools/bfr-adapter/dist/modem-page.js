@@ -1,3 +1,4 @@
+// build 261117-1407
 // Halaman Cellular (#modem) versi OpenWrt.
 // Isi bawaan BFR disembunyikan, diganti SATU kartu milik kita sendiri:
 // kekuatan sinyal (bar + %), identitas sel, lock band, rotasi IP.
@@ -24,6 +25,7 @@
 	});
 	// halaman login BFR bisa sudah ber-hash #modem (tautan langsung) -> jangan pasang apa pun di situ
 	const sudahMasuk = () => !document.querySelector('input[type=password]') && !!document.querySelector('main');
+	const CAP_VERSI = (document.querySelector('script[src*="modem-page.js?v="]') || {src: ''}).src.split('?v=')[1] || '-';
 	const onModem = () => sudahMasuk() && (location.hash || '').indexOf('#modem') === 0;
 
 	function leaf(rx) {
@@ -283,7 +285,7 @@
 			if (!c && !s) {
 				say('server tidak menjawab di ' + location.host + ' (cell & sinyal kosong) — cek /etc/init.d/bfr-adapter status');
 			} else {
-				say('diperbarui ' + jam +
+				say('diperbarui ' + jam + ' • v' + CAP_VERSI +
 					(c ? '' : ' • data sel kosong') + (s ? '' : ' • data sinyal kosong') +
 					(last.rot && last.rot.mins ? ' • rotasi ' + last.rot.mins + ' mnt' : ' • rotasi mati'));
 			}
