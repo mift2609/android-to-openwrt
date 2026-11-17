@@ -207,6 +207,14 @@
 		new Promise(r => setTimeout(() => r(null), ms))
 	]);
 
+	// kartu bawaan hanya memuat sekali; kalau saat itu adaptor belum siap, nilainya tetap kosong.
+	// Karena itu halaman disegarkan berkala (dan begitu tab kembali dilihat).
+	function klikSegarkan() {
+		if (!onModem()) return;
+		const btn = [...document.querySelectorAll('button')].find(b => /refresh all/i.test((b.textContent || '').trim()));
+		if (btn) btn.click();
+	}
+
 	async function load() {
 		if (!onModem()) return;
 		try {
@@ -220,7 +228,10 @@
 				(last.rot && last.rot.mins ? ' • rotasi ' + last.rot.mins + ' mnt' : ' • rotasi mati'));
 
 			// data tambahan (lebih lambat) menyusul, tanpa menahan tampilan
-			batas(api('/api/modem/bands'), 20000).then(b => { if (b) { last.bands = b; fill(); } });
+			if (Date.now() - (last.bandsAt || 0) > 60000) {
+				last.bandsAt = Date.now();
+				batas(api('/api/modem/bands'), 25000).then(b => { if (b) { last.bands = b; fill(); } });
+			}
 			batas(api('/api/modem/rotate'), 8000).then(r => { if (r) { last.rot = r; fill(); } });
 		} catch (e) { say('gagal memuat: ' + e.message); }
 	}
@@ -262,7 +273,10 @@
 		barBawaan(); // bar di kartu "Cellular Radio Signal"
 	}
 
-	setInterval(() => { if (onModem()) load(); }, 10000); // nilai sinyal tiap 10 detik
+	// nilai sel + sinyal tiap 10 detik; daftar band lebih jarang (perintahnya berat)
+	setInterval(() => { if (onModem()) load(); }, 10000);
+	setInterval(klikSegarkan, 15000);
+	document.addEventListener('visibilitychange', () => { if (!document.hidden) klikSegarkan(); });
 	// halaman digambar ulang oleh Svelte -> coba pasang lagi secara berkala
 	setInterval(() => {
 		if (!onModem()) return;

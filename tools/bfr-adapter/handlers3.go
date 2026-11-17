@@ -57,7 +57,8 @@ func g3() map[string]any {
 		return cached
 	}
 	if cached == nil {
-		// belum ada data: isi di latar, balas segera supaya UI tidak menggantung
+		// belum ada data sama sekali (baru start / cache terhapus): isi sekarang,
+		// lalu tunggu sebentar supaya pemanggil pertama tetap dapat angka
 		if !busy {
 			cellMu.Lock()
 			g3Busy = true
@@ -85,8 +86,9 @@ func g3() map[string]any {
 }
 
 func cellWarmer() {
+	g3() // hangatkan segera setelah adaptor hidup
 	for {
-		time.Sleep(2 * time.Minute)
+		time.Sleep(90 * time.Second)
 		g3()
 	}
 }
