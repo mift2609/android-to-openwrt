@@ -88,8 +88,10 @@
 		try {
 			const s = await api('/api/modem/signal');
 			const set = (label, val) => {
+				// kalau modem sesaat tidak melaporkan (kosong), pertahankan nilai terakhir
+				if (val == null || val === '' || val === '-') return;
 				const box = [...grid.children].find(c => (c.firstElementChild || {}).textContent === label);
-				if (box && box.lastElementChild) box.lastElementChild.textContent = (val == null || val === '') ? '-' : String(val);
+				if (box && box.lastElementChild) box.lastElementChild.textContent = String(val);
 			};
 			set('RSRP', s.rsrp);
 			set('RSRQ', s.rsrq);
