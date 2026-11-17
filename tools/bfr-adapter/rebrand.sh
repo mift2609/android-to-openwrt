@@ -51,6 +51,13 @@ sed -i \
 # tautan repo asli dikembalikan agar tidak 404 (atribusi)
 sed -i 's#latifangren/OpenWrt#latifangren/BFR-WEBUI-GO#g' index.html assets/*.js 2>/dev/null || true
 
+
+# suntikkan penyesuaian tampilan (sembunyikan baris kosong, buang kata "Android")
+cp ../ui/fix.js fix.js
+if ! grep -q 'src="/fix.js"' index.html; then
+	sed -i 's#</body>#<script src="/fix.js"></script></body>#' index.html
+fi
+
 echo "judul      : $(grep -o '<title>[^<]*</title>' index.html)"
 echo "sisa BFR   : $(grep -oh 'BFR' index.html assets/*.js | wc -l) (hanya tautan repo)"
 echo "Android/js : $(grep -o 'Android' assets/index-*.js | wc -l)"
