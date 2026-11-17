@@ -96,6 +96,7 @@ func main() {
 	mux.HandleFunc("/api/proxy/status", apiProxyStatus)
 	mux.HandleFunc("/api/proxy/control", apiProxyControl)
 	mux.HandleFunc("/api/proxy/settings", apiProxyMode)
+	mux.HandleFunc("/api/proxy/watchdog", apiProxyWatchdog)
 	mux.HandleFunc("/api/proxy/subs", apiUnsupported)
 	mux.HandleFunc("/api/proxy/apps", apiUnsupported)
 	mux.HandleFunc("/api/proxy/hotspot", apiUnsupported)

@@ -325,7 +325,16 @@ func apiKernelVM(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, map[string]any{"success": true, "message": "Diterapkan & disimpan: " + strings.Join(saved, ", ")})
 }
 
-/* ---------- proxy (OpenClash / mihomo) ---------- */
+/* ---------- proxy: nikki (mihomo) + OpenClash ---------- */
+
+// Dua core nyata di router; pgrep dipakai karena init.d nikki/openclash
+// tidak punya subperintah "running".
+type proxyCore struct{ ID, Label, Svc, Bin string }
+
+var proxyCores = []proxyCore{
+	{"mihomo", "Mihomo (nikki)", "nikki", "/usr/bin/mihomo"},
+	{"openclash", "OpenClash", "openclash", "/etc/openclash/core/clash_meta"},
+}
 
 func clashAPI(path string) string {
 	sec := run(5, "sh", "-c", "uci -q get openclash.config.dashboard_password 2>/dev/null || grep -m1 secret /etc/openclash/config.yaml 2>/dev/null | awk '{print $2}'")
@@ -336,62 +345,160 @@ func clashAPI(path string) string {
 	return run(12, "sh", "-c", "curl -s -m 6 "+hdr+" http://127.0.0.1:9090"+path)
 }
 
+func corePid(c proxyCore) string {
+	ctx, cancel := ctxTimeout(4)
+	defer cancel()
+	b, _ := exec.CommandContext(ctx, "pgrep", "-f", c.Bin).Output()
+	if ps := strings.Fields(string(b)); len(ps) > 0 {
+		return ps[0]
+	}
+	return ""
+}
+
+func coreMem(pid string) string {
+	if pid == "" {
+		return ""
+	}
+	ctx, cancel := ctxTimeout(4)
+	defer cancel()
+	b, _ := exec.CommandContext(ctx, "ps", "-o", "rss=", "-p", pid).Output()
+	if kb, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && kb > 0 {
+		return strconv.Itoa(kb/1024) + " MB"
+	}
+	return ""
+}
+
+func proxyRunning() (proxyCore, bool) {
+	for _, c := range proxyCores {
+		if corePid(c) != "" {
+			return c, true
+		}
+	}
+	return proxyCore{}, false
+}
+
+func proxyPref() proxyCore {
+	id := strings.TrimSpace(run(4, "uci", "-q", "get", "bfr.proxy.core"))
+	for _, c := range proxyCores {
+		if c.ID == id {
+			return c
+		}
+	}
+	return proxyCores[0]
+}
+
+func proxyActive() proxyCore {
+	if c, ok := proxyRunning(); ok {
+		return c
+	}
+	return proxyPref()
+}
+
 func apiProxyStatus(w http.ResponseWriter, r *http.Request) {
 	if !guard(w, r) {
 		return
 	}
-	running := isServiceRunning("openclash") || isServiceRunning("nikki")
-	ver := clashAPI("/version")
-	mode := ""
-	cfg := clashAPI("/configs")
-	if cfg != "" {
+	cores := []map[string]any{}
+	anyRun := false
+	for _, c := range proxyCores {
+		pid := corePid(c)
+		if pid != "" {
+			anyRun = true
+		}
+		cores = append(cores, map[string]any{
+			"id": c.ID, "name": c.Label, "running": pid != "",
+			"pid": orDash(pid), "memory": orDash(coreMem(pid)),
+		})
+	}
+	active := proxyActive()
+	mode := "Rule"
+	if cfg := clashAPI("/configs"); cfg != "" {
 		var m map[string]any
 		if json.Unmarshal([]byte(cfg), &m) == nil {
-			if v, ok := m["mode"].(string); ok {
-				mode = v
-			}
-			if p, ok := m["mixed-port"]; ok {
-				_ = p
+			if v, ok := m["mode"].(string); ok && v != "" {
+				mode = strings.ToUpper(v[:1]) + v[1:]
 			}
 		}
 	}
-	core := "mihomo (OpenClash)"
-	if !strings.Contains(ver, "Meta") && ver != "" {
-		core = "clash"
-	}
 	jsonOut(w, map[string]any{
-		"running": running, "core": core, "version": strings.TrimSpace(strings.Trim(ver, "{}")),
-		"mode": orDash(mode), "mixed_port": 7890, "api_port": 9090,
-		"watchdog": isServiceRunning("openclash"), "uptime": orDash(readTrim("/proc/uptime")),
-		"nodes": 0, "active_nodes": 0,
+		"running": anyRun, "cores": cores,
+		"box_settings": map[string]any{"bin_name": active.Label, "core": active.ID},
+		"mode":         mode,
+		"version":      strings.TrimSpace(strings.Trim(clashAPI("/version"), "{}")),
+		"watchdog":     watchdogOn(), "uptime": orDash(readTrim("/proc/uptime")),
+		"mixed_port": 7890, "api_port": 9090,
 	})
+}
+
+func watchdogOn() bool {
+	return strings.TrimSpace(run(4, "uci", "-q", "get", "nikki.config.scheduled_restart")) == "1"
 }
 
 func apiProxyControl(w http.ResponseWriter, r *http.Request) {
 	if !guard(w, r) || r.Method != http.MethodPost {
 		return
 	}
-	var b struct{ Action string `json:"action"` }
+	var b struct{ Action, Core, Mode string }
 	json.NewDecoder(r.Body).Decode(&b)
-	svc := "openclash"
-	if _, err := os.Stat("/etc/init.d/" + svc); err != nil {
-		svc = "nikki"
+	if b.Mode != "" { // UI kirim {mode} tanpa action
+		out := run(12, "sh", "-c", "curl -s -m 6 -X PATCH -d '{\"mode\":\""+san(b.Mode)+"\"}' http://127.0.0.1:9090/configs")
+		jsonOut(w, map[string]any{"success": out != "", "message": "Mode: " + b.Mode})
+		return
+	}
+	target := proxyActive()
+	for _, c := range proxyCores {
+		if c.ID == b.Core || c.Label == b.Core {
+			target = c
+		}
 	}
 	switch b.Action {
+	case "switch_core":
+		run(6, "sh", "-c", "uci set bfr.proxy=proxy; uci set bfr.proxy.core='"+target.ID+"'; uci commit bfr")
+		for _, c := range proxyCores {
+			if c.ID != target.ID && corePid(c) != "" {
+				run(40, "/etc/init.d/"+c.Svc, "stop")
+			}
+		}
+		run(10, "/etc/init.d/"+target.Svc, "enable")
+		out := run(90, "/etc/init.d/"+target.Svc, "restart")
+		jsonOut(w, map[string]any{"success": true, "core": target.ID, "message": target.Label + ": " + orDash(out)})
 	case "start", "stop", "restart", "reload":
 		act := b.Action
 		if act == "reload" {
 			act = "restart"
 		}
-		out := run(60, "/etc/init.d/"+svc, act)
-		jsonOut(w, map[string]any{"success": true, "message": svc + " " + act + ": " + orDash(out)})
+		out := run(90, "/etc/init.d/"+target.Svc, act)
+		jsonOut(w, map[string]any{"success": true, "core": target.ID, "message": target.Label + " " + act + ": " + orDash(out)})
 	default:
 		jsonOut(w, map[string]any{"success": false, "error": "aksi tidak dikenal"})
 	}
 }
 
-func apiProxyMode(w http.ResponseWriter, r *http.Request) {
+func apiProxyWatchdog(w http.ResponseWriter, r *http.Request) {
 	if !guard(w, r) || r.Method != http.MethodPost {
+		return
+	}
+	var b struct {
+		Enable bool `json:"enable"`
+	}
+	json.NewDecoder(r.Body).Decode(&b)
+	val := "0"
+	if b.Enable {
+		val = "1"
+	}
+	run(6, "sh", "-c", "uci set nikki.config.scheduled_restart='"+val+"'; uci commit nikki")
+	jsonOut(w, map[string]any{"success": true, "enabled": b.Enable,
+		"message": "restart terjadwal nikki: " + val})
+}
+
+func apiProxyMode(w http.ResponseWriter, r *http.Request) {
+	if !guard(w, r) {
+		return
+	}
+	if r.Method == http.MethodGet {
+		jsonOut(w, map[string]any{"success": true, "settings": map[string]any{
+			"mode": "rule", "mixed_port": 7890, "api_port": 9090, "core": proxyActive().ID,
+		}})
 		return
 	}
 	var b struct{ Mode string `json:"mode"` }

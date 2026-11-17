@@ -96,8 +96,19 @@
 					if (b.style) { b.style.display = 'none'; b.setAttribute('data-why', 'kartu :: ' + cardHit.slice(0, 24)); }
 					b = b.parentElement;
 				}
-				const wrap = el.closest('section, article');
-				if (wrap && wrap.style && wrap.style.display !== 'none') wrap.style.display = 'none';
+				// naik ke kotak berkartu terdekat (judul saja tidak cukup: kartunya tetap terlihat)
+				let wrap = el;
+				for (let i = 0; i < 8; i++) {
+					if (!wrap.parentElement) break;
+					const cs = getComputedStyle(wrap);
+					if ((parseFloat(cs.borderTopWidth) || 0) > 0 && (parseFloat(cs.borderTopLeftRadius) || 0) > 3
+						&& wrap.children.length <= 12) break;
+					wrap = wrap.parentElement;
+				}
+				if (wrap && wrap.style && wrap.style.display !== 'none') {
+					wrap.style.display = 'none';
+					wrap.setAttribute('data-why', 'kartu');
+				}
 				continue;
 			}
 			if (raw.length <= 120 && el.children.length <= 2) {
