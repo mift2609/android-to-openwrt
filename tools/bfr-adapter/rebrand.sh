@@ -64,6 +64,8 @@ if ! grep -q 'src="/modem-card.js"' index.html; then
 	sed -i 's#</body>#<script src="/modem-card.js"></script></body>#' index.html
 fi
 
+python3 ../prune-tabs.py . || echo "(prune gagal, lanjut)"
+
 echo "judul      : $(grep -o '<title>[^<]*</title>' index.html)"
 echo "sisa BFR   : $(grep -oh 'BFR' index.html assets/*.js | wc -l) (hanya tautan repo)"
 echo "Android/js : $(grep -o 'Android' assets/index-*.js | wc -l)"

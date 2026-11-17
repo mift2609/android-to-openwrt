@@ -132,7 +132,16 @@
 		refresh();
 	}
 
-	document.addEventListener('DOMContentLoaded', mount);
-	window.addEventListener('hashchange', mount);
-	setInterval(mount, 4000);
+	// jaga agar kartu selalu jadi elemen terakhir (Svelte bisa menyisipkan isi halaman setelahnya)
+	function keepLast() {
+		if ((location.hash || '').indexOf('#modem') !== 0) return;
+		const host = document.querySelector('main') || document.body;
+		const el = document.getElementById(ID);
+		if (host && el && host.lastElementChild !== el) host.appendChild(el);
+	}
+
+	document.addEventListener('DOMContentLoaded', () => { mount(); keepLast(); });
+	window.addEventListener('hashchange', () => { mount(); keepLast(); });
+	new MutationObserver(keepLast).observe(document.body, { childList: true, subtree: true });
+	setInterval(() => { mount(); keepLast(); }, 2500);
 })();
