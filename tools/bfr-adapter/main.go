@@ -48,12 +48,16 @@ func main() {
 
 	// modem
 	mux.HandleFunc("/api/modem/signal", apiModemSignal)
+	mux.HandleFunc("/api/modem/cell", apiModemCell)
+	mux.HandleFunc("/api/modem/bands", apiModemBands)
+	mux.HandleFunc("/api/modem/lock", apiModemLock)
+	mux.HandleFunc("/api/modem/rotate", apiModemRotate)
+	mux.HandleFunc("/api/modem/action", apiModemAction)
 	mux.HandleFunc("/api/modem/sim/status", apiModemSimStatus)
 	mux.HandleFunc("/api/modem/sim/switch", apiModemUnsupported)
 	mux.HandleFunc("/api/modem/thermal", apiModemThermal)
 	mux.HandleFunc("/api/modem/at", apiModemAT)
 	mux.HandleFunc("/api/modem/plmn_lock", apiModemUnsupported)
-	mux.HandleFunc("/api/modem/bands", apiModemUnsupported)
 	mux.HandleFunc("/api/modem/status", apiModemSignal)
 
 	// jaringan
@@ -129,6 +133,7 @@ func main() {
 		smsCacheSet(fetchInbox(8))
 		go SMSWarmer()
 	}()
+	go func() { time.Sleep(5 * time.Second); g3(); go cellWarmer() }()
 	logf("bfr-adapter di :%s", port)
 	if err := (&http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}).ListenAndServe(); err != nil {
 		logf("gagal: %v", err)

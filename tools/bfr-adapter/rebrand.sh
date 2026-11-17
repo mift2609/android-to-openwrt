@@ -56,8 +56,12 @@ sed -i 's#latifangren/OpenWrt#latifangren/BFR-WEBUI-GO#g' index.html assets/*.js
 
 # suntikkan penyesuaian tampilan (sembunyikan baris kosong, buang kata "Android")
 cp ../ui/fix.js fix.js
+cp ../ui/modem-card.js modem-card.js
 if ! grep -q 'src="/fix.js"' index.html; then
 	sed -i 's#</body>#<script src="/fix.js"></script></body>#' index.html
+fi
+if ! grep -q 'src="/modem-card.js"' index.html; then
+	sed -i 's#</body>#<script src="/modem-card.js"></script></body>#' index.html
 fi
 
 echo "judul      : $(grep -o '<title>[^<]*</title>' index.html)"
