@@ -75,8 +75,9 @@
 
 			// isi yang sudah tampil di kartu "Kontrol Modem LTE" di bawah — jangan dobel di atas
 			if (raw.length < 40 && /^(physical cell id|earfcn)/i.test(raw)) {
+				// sembunyikan barisnya (label + nilainya), bukan hanya labelnya
 				let row = el;
-				while (row.parentElement && row.parentElement.children.length === 1) row = row.parentElement;
+				for (let i = 0; i < 4 && row.parentElement && row.parentElement.children.length <= 2; i++) row = row.parentElement;
 				if (row.style) { row.style.display = 'none'; row.setAttribute('data-why', 'dobel'); }
 				continue;
 			}
