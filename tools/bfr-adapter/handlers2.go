@@ -350,13 +350,28 @@ func coreEnable(c proxyCore, on bool) {
 	run(6, "sh", "-c", "uci set "+key+"='"+v+"'; uci commit "+c.Svc)
 }
 
+func clashSecret() string {
+	if s := strings.TrimSpace(run(4, "uci", "-q", "get", "nikki.mixin.api_secret")); s != "" {
+		return s
+	}
+	return strings.TrimSpace(run(5, "sh", "-c", "grep -m1 -i '^secret:' /etc/openclash/*.yaml 2>/dev/null | awk '{print $2}'"))
+}
+
 func clashAPI(path string) string {
-	sec := run(5, "sh", "-c", "uci -q get openclash.config.dashboard_password 2>/dev/null || grep -m1 secret /etc/openclash/config.yaml 2>/dev/null | awk '{print $2}'")
 	hdr := "-H 'Content-Type: application/json'"
-	if sec != "" {
+	if sec := clashSecret(); sec != "" {
 		hdr += " -H 'Authorization: Bearer " + sec + "'"
 	}
 	return run(12, "sh", "-c", "curl -s -m 6 "+hdr+" http://127.0.0.1:9090"+path)
+}
+
+func clashPatch(body string) bool {
+	hdr := "-H 'Content-Type: application/json'"
+	if sec := clashSecret(); sec != "" {
+		hdr += " -H 'Authorization: Bearer " + sec + "'"
+	}
+	code := run(12, "sh", "-c", "curl -s -m 6 -o /dev/null -w '%{http_code}' -X PATCH "+hdr+" -d '"+body+"' http://127.0.0.1:9090/configs")
+	return strings.HasPrefix(strings.TrimSpace(code), "2")
 }
 
 func corePid(c proxyCore) string {
@@ -458,8 +473,8 @@ func apiProxyControl(w http.ResponseWriter, r *http.Request) {
 	var b struct{ Action, Core, Mode string }
 	json.NewDecoder(r.Body).Decode(&b)
 	if b.Mode != "" { // UI kirim {mode} tanpa action
-		out := run(12, "sh", "-c", "curl -s -m 6 -X PATCH -d '{\"mode\":\""+san(b.Mode)+"\"}' http://127.0.0.1:9090/configs")
-		jsonOut(w, map[string]any{"success": out != "", "message": "Mode: " + b.Mode})
+		ok := clashPatch("{\"mode\":\"" + san(strings.ToLower(b.Mode)) + "\"}")
+		jsonOut(w, map[string]any{"success": ok, "message": "Mode: " + b.Mode})
 		return
 	}
 	target := proxyActive()
@@ -524,8 +539,8 @@ func apiProxyMode(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct{ Mode string `json:"mode"` }
 	json.NewDecoder(r.Body).Decode(&b)
-	out := run(12, "sh", "-c", "curl -s -m 6 -X PATCH -d '{\"mode\":\""+san(b.Mode)+"\"}' http://127.0.0.1:9090/configs")
-	jsonOut(w, map[string]any{"success": out != "", "message": "Mode: " + b.Mode, "raw": out})
+	ok := clashPatch("{\"mode\":\"" + san(strings.ToLower(b.Mode)) + "\"}")
+	jsonOut(w, map[string]any{"success": ok, "message": "Mode: " + b.Mode})
 }
 
 /* ---------- tunnel (tailscale) ---------- */
