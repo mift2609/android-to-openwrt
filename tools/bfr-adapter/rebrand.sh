@@ -10,6 +10,8 @@ cd "$(dirname "$0")/dist"
 FILES="index.html assets/*.js"
 for f in $FILES; do
 	[ -f "$f" ] || continue
+	# halaman About = kredit pembuat asli: JANGAN diubah
+	case "$f" in *TabAbout-*) continue ;; esac
 	sed -i \
 		-e 's/BFR WEBUI/OPENWRT/g' \
 		-e 's/BFR Control Panel/OpenWrt Control Panel/g' \

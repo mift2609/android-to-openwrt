@@ -37,6 +37,8 @@
 	}
 
 	function tidy() {
+		// halaman About memuat kredit pembuat asli: biarkan apa adanya
+		if ((location.hash || '').indexOf('#about') === 0) return;
 		for (const el of document.querySelectorAll('span, div, p, td, label')) {
 			if (el.style.display === 'none') continue;
 			const raw = (el.textContent || '').trim();
