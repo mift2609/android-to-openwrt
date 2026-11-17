@@ -141,6 +141,18 @@
 		return null;
 	}
 
+	// tukar posisi dua kartu (Cell Identity & Info <-> Cellular Radio Signal)
+	function tukarKartu() {
+		if (!onModem()) return;
+		const a = cardOf(/^cellular radio signal$/i);
+		const b = cardOf(/^cell identity & info$/i);
+		if (!a || !b || a.parentElement !== b.parentElement) return;
+		const anak = [...a.parentElement.children];
+		if (anak.indexOf(a) < anak.indexOf(b)) {
+			a.parentElement.insertBefore(b, a); // b pindah ke depan a
+		}
+	}
+
 	function barBawaan() {
 		if (!onModem()) return;
 		const card = cardOf(/^cellular radio signal$/i);
@@ -319,6 +331,7 @@
 		} else if (el.parentElement !== host) {
 			host.appendChild(el);
 		}
+		tukarKartu();
 		barBawaan(); // bar di kartu "Cellular Radio Signal"
 	}
 
@@ -328,10 +341,19 @@
 	document.addEventListener('visibilitychange', () => { if (!document.hidden) klikSegarkan(); });
 	// halaman digambar ulang oleh Svelte -> coba pasang lagi secara berkala
 	setInterval(() => {
-		if (!onModem()) return;
+		if (!onModem()) {
+			// sudah pindah menu: bersihkan sisa kartu/bar di halaman lain
+			const c = document.getElementById(ID);
+			if (c) c.remove();
+			const b = document.getElementById('mm-bar');
+			if (b) b.remove();
+			return;
+		}
 		if (!document.getElementById(ID)) mount();
 		if (!document.getElementById('mm-bar')) barBawaan();
-	}, 1500);
+	}, 1000);
+	// klik menu apa pun -> periksa lagi setelah render
+	document.addEventListener('click', () => setTimeout(() => { if (!onModem()) { const c = document.getElementById(ID); if (c) c.remove(); const b = document.getElementById('mm-bar'); if (b) b.remove(); } }, 400), true);
 	new MutationObserver(() => {
 		if (!onModem()) return;
 		if (!document.getElementById(ID) || !document.getElementById('mm-bar')) mount();
