@@ -1,4 +1,4 @@
-// build 261117-1407
+// build 261117-1413
 // Penyesuaian tampilan untuk OpenWrt (dijalankan di browser, kode BFR tidak diubah):
 //  1) sembunyikan hanya baris/tile kecil yang tak berlaku di router (jangan sampai kartunya ikut)
 //  2) buang kata "Android" pada nilai yang tampil
@@ -99,14 +99,20 @@
 				}
 				// naik ke kotak berkartu terdekat (judul saja tidak cukup: kartunya tetap terlihat)
 				let wrap = el;
-				for (let i = 0; i < 8; i++) {
+				for (let i = 0; i < 4; i++) {
 					if (!wrap.parentElement) break;
 					const cs = getComputedStyle(wrap);
 					if ((parseFloat(cs.borderTopWidth) || 0) > 0 && (parseFloat(cs.borderTopLeftRadius) || 0) > 3
 						&& wrap.children.length <= 12) break;
 					wrap = wrap.parentElement;
 				}
-				if (wrap && wrap.style && wrap.style.display !== 'none') {
+				// PENGAMAN: jangan pernah menyembunyikan akar halaman / wadah utama aplikasi.
+				// (kalau kena, seluruh layar jadi putih dan tak ada yang bisa diklik)
+				const akar = document.documentElement;
+				const berbahaya = !wrap || wrap === akar || wrap === document.body || wrap.tagName === 'HTML'
+					|| wrap.tagName === 'BODY' || wrap.querySelector('main, nav, header')
+					|| wrap.contains(document.querySelector('main') || akar);
+				if (!berbahaya && wrap.style && wrap.style.display !== 'none') {
 					wrap.style.display = 'none';
 					wrap.setAttribute('data-why', 'kartu');
 				}

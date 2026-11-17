@@ -1,4 +1,4 @@
-// build 261117-1407
+// build 261117-1413
 // Halaman Cellular (#modem) versi OpenWrt.
 // Isi bawaan BFR disembunyikan, diganti SATU kartu milik kita sendiri:
 // kekuatan sinyal (bar + %), identitas sel, lock band, rotasi IP.
