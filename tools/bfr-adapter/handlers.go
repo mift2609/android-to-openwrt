@@ -46,8 +46,12 @@ func apiModemSignal(w http.ResponseWriter, r *http.Request) {
 			if v := solo(l["sig.snr"]); v != "" {
 				return v
 			}
-			if v, ok := g["snr"]; ok && v != nil {
-				return strings.Fields(toStr(v) + " ")[0]
+			for _, k := range []string{"snr", "sinr", "snr_db"} {
+				if v, ok := g[k]; ok && v != nil {
+					if f := strings.Fields(toStr(v) + " "); len(f) > 0 && f[0] != "" {
+						return f[0]
+					}
+				}
 			}
 			return ""
 		}(),
