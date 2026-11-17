@@ -11,6 +11,14 @@
 
 	const api = async (url, opt) => {
 		const r = await fetch(url, Object.assign({ credentials: 'include' }, opt || {}));
+		if (r.status === 401 || r.status === 403) {
+			// sesi habis / belum masuk: bersihkan dan jangan tampilkan kartu
+			const c = document.getElementById(ID);
+			if (c) c.remove();
+			const b = document.getElementById('mm-bar');
+			if (b) b.remove();
+			throw new Error('belum masuk');
+		}
 		if (!r.ok) throw new Error('HTTP ' + r.status);
 		return r.json();
 	};
@@ -18,7 +26,9 @@
 		method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Panel': '1' },
 		body: JSON.stringify(body || {})
 	});
-	const onModem = () => (location.hash || '').indexOf('#modem') === 0;
+	// halaman login BFR bisa sudah ber-hash #modem (tautan langsung) -> jangan pasang apa pun di situ
+	const sudahMasuk = () => !document.querySelector('input[type=password]') && !!document.querySelector('main');
+	const onModem = () => sudahMasuk() && (location.hash || '').indexOf('#modem') === 0;
 
 	function leaf(rx) {
 		return [...document.querySelectorAll('div,span,td,p,strong,h2,h3,h4,button')]
@@ -189,11 +199,13 @@
 
 		const bd = last.bands;
 		if (bd) {
-			const aktif = (bd.active || []).map(x => String(x).replace(/^B/i, ''));
+			// bentuknya bisa array atau teks tergantung keluaran modem -> seragamkan
+			const keArr = v => Array.isArray(v) ? v : (v == null || v === '' ? [] : String(v).split(/[\s,|]+/));
+			const aktif = keArr(Array.isArray(bd.active_bands) && bd.active_bands.length ? bd.active_bands : bd.active).map(x => String(x).replace(/^B/i, ''));
 			el.querySelectorAll('#mm-bands input').forEach(i => { i.checked = aktif.indexOf(i.value) >= 0; });
 			const info = el.querySelector('#mm-bandaktif');
 			if (info) info.textContent = bd.locked
-				? 'Lock aktif: ' + (bd.selected_bands || []).join(', ')
+				? 'Lock aktif: ' + (Array.isArray(bd.selected_bands) ? bd.selected_bands.join(', ') : String(bd.selected_bands || ''))
 				: (aktif.length ? 'Band aktif (auto): ' + aktif.map(x => 'B' + x).join(' ') : '');
 		}
 		const sel = el.querySelector('#mm-mins');
@@ -218,8 +230,10 @@
 	async function load() {
 		if (!onModem()) return;
 		try {
-			const c = await batas(api('/api/modem/cell'), 8000);
-			const s = await batas(api('/api/modem/signal'), 8000);
+			const [c, s] = await Promise.all([
+				batas(api('/api/modem/cell'), 9000),
+				batas(api('/api/modem/signal'), 9000)
+			]);
 			if (c) last.cell = c;
 			if (s) last.sig = s;
 			barBawaan();

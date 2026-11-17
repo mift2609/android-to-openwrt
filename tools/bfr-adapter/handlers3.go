@@ -170,9 +170,25 @@ func apiModemBands(w http.ResponseWriter, r *http.Request) {
 		n := strings.TrimPrefix(b, "eutran-")
 		lte = append(lte, map[string]any{"id": b, "band": "B" + n, "num": atoiSafe(n)})
 	}
+	// all_supported tanpa pengulangan (keluaran modem suka mendaftar dua kali)
+	semu := []string{}
+	seenAll := map[string]bool{}
+	for _, b := range supported {
+		if !seenAll[b] {
+			seenAll[b] = true
+			semu = append(semu, b)
+		}
+	}
 	cur := g3()
+	// daftar band yang sedang aktif (untuk centang di panel)
+	aktif := []string{}
+	if b := strings.TrimSpace(toStr(cur["pband"])); b != "" {
+		aktif = append(aktif, strings.Split(b, " ")[0])
+	} else if b := strings.TrimSpace(toStr(cur["band"])); b != "" && b != "-" {
+		aktif = append(aktif, b)
+	}
 	jsonOut(w, map[string]any{
-		"supported": lte, "all_supported": supported,
+		"supported": lte, "all_supported": semu, "active_bands": aktif,
 		"locked":  run(6, "uci", "-q", "get", "rolexlte.main.band") != "",
 		"lock":    run(6, "uci", "-q", "get", "rolexlte.main.band"),
 		"active":  map[string]any{"band": cur["pband"], "earfcn": cur["earfcn"], "pci": cur["pci"]},
