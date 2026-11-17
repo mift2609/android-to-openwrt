@@ -74,8 +74,9 @@
 		el.querySelector('#mc-rebootmodem').onclick = () => act('action', { action: 'rebootmodem' }, 'Reboot modem MSS…');
 		el.querySelector('#mc-soft').onclick = () => act('action', { action: 'softreset' }, 'Reset ringan…');
 
+		// taruh di BAWAH semua info halaman (bukan di atas)
 		const host = document.querySelector('main') || document.body;
-		host.insertBefore(el, host.firstChild ? host.firstChild.nextSibling : null);
+		host.appendChild(el);
 		return el;
 	}
 
@@ -125,7 +126,9 @@
 			if (old) old.remove();
 			return;
 		}
-		box();
+		const el = box();
+		const host = document.querySelector('main') || document.body;
+		if (el.parentElement !== host || host.lastElementChild !== el) host.appendChild(el);
 		refresh();
 	}
 

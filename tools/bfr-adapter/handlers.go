@@ -24,22 +24,43 @@ func apiModemSignal(w http.ResponseWriter, r *http.Request) {
 	if band == "" || band == "0" {
 		band = "-"
 	}
+	// nilai angka saja: kartu bawaan menambahkan sendiri satuan (dBm/dB)
+	solo := func(v string) string {
+		f := strings.Fields(v)
+		if len(f) == 0 {
+			return ""
+		}
+		return f[0]
+	}
+	g := g3()
 	jsonOut(w, map[string]any{
 		"operator":     l["modem.3gpp.operator-name"],
 		"state":        l["modem.generic.state"],
 		"network_type": strings.ToUpper(l["modem.generic.access-technologies.value[1]"]),
 		"registration": l["modem.3gpp.registration-state"],
 		"ps_state":     l["modem.3gpp.packet-service-state"],
-		"rssi":         l["sig.rssi"],
-		"rsrp":         l["sig.rsrp"],
-		"rsrq":         l["sig.rsrq"],
-		"sinr":         l["sig.snr"],
+		"rssi":         solo(l["sig.rssi"]),
+		"rsrp":         solo(l["sig.rsrp"]),
+		"rsrq":         solo(l["sig.rsrq"]),
+		"sinr": func() string {
+			if v := solo(l["sig.snr"]); v != "" {
+				return v
+			}
+			if v, ok := g["snr"]; ok && v != nil {
+				return strings.Fields(toStr(v) + " ")[0]
+			}
+			return ""
+		}(),
 		"band":         band,
 		"sim":          l["modem.generic.sim"],
 		"imei":         l["modem.3gpp.imei"],
 		"signal_pct":   signalPct(l["sig.rsrp"]),
 		"cell_id":      l["loc.cell"],
 		"tac":          l["loc.tac"],
+		// supaya kartu "Cell Identity & Info" bawaan ikut terisi
+		"pci":    g["pci"],
+		"earfcn": g["earfcn"],
+		"pband":  g["pband"],
 	})
 }
 
@@ -790,6 +811,18 @@ func applySchedule(cfg map[string]any) {
 }
 
 /* ---------- util kecil ---------- */
+
+func toStr(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case float64:
+		return strconv.FormatFloat(x, 'f', 1, 64)
+	case int:
+		return strconv.Itoa(x)
+	}
+	return ""
+}
 
 func guard(w http.ResponseWriter, r *http.Request) bool {
 	if !authed(r) {
