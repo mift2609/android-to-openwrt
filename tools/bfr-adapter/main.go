@@ -45,10 +45,91 @@ func main() {
 	mux.HandleFunc("/api/sysinfo", apiSysinfo)
 	mux.HandleFunc("/api/stats", apiSysinfo)
 	mux.HandleFunc("/api/shortcuts/", apiShortcuts)
+
+	// modem
+	mux.HandleFunc("/api/modem/signal", apiModemSignal)
+	mux.HandleFunc("/api/modem/sim/status", apiModemSimStatus)
+	mux.HandleFunc("/api/modem/sim/switch", apiModemUnsupported)
+	mux.HandleFunc("/api/modem/thermal", apiModemThermal)
+	mux.HandleFunc("/api/modem/at", apiModemAT)
+	mux.HandleFunc("/api/modem/plmn_lock", apiModemUnsupported)
+	mux.HandleFunc("/api/modem/bands", apiModemUnsupported)
+	mux.HandleFunc("/api/modem/status", apiModemSignal)
+
+	// jaringan
+	mux.HandleFunc("/api/network/ttl", apiNetworkTTL)
+	mux.HandleFunc("/api/network/dns", apiNetworkDNS)
+	mux.HandleFunc("/api/network/dns/reset", apiNetworkDNSReset)
+	mux.HandleFunc("/api/network/ping", apiNetworkPing)
+	mux.HandleFunc("/api/network/tweaks", apiNetworkTweaks)
+
+	// tethering & QoS
+	mux.HandleFunc("/api/hotspot/status", apiHotspotStatus)
+	mux.HandleFunc("/api/hotspot/clients", apiHotspotClients)
+	mux.HandleFunc("/api/hotspot/settings", apiHotspotSettings)
+	mux.HandleFunc("/api/hotspot/control", apiHotspotControl)
+	mux.HandleFunc("/api/hotspot/mac-filter", apiHotspotMACFilter)
+	mux.HandleFunc("/api/qos/status", apiQoSStatus)
+	mux.HandleFunc("/api/qos/apply", apiQoSApply)
+
+	// SMS, log, daya
+	mux.HandleFunc("/api/sms/inbox", apiSMSInbox)
+	mux.HandleFunc("/api/logs", apiLogs)
+	mux.HandleFunc("/api/logs/clear", apiLogsClear)
+	mux.HandleFunc("/api/power", apiPower)
+	mux.HandleFunc("/api/power/schedule", apiPowerSchedule)
+
+	// vnstat, ssh, kernel
+	mux.HandleFunc("/api/vnstat/stats", apiVnstatStats)
+	mux.HandleFunc("/api/vnstat/reset", apiVnstatReset)
+	mux.HandleFunc("/api/ssh/status", apiSSHStatus)
+	mux.HandleFunc("/api/kernel/status", apiKernelStatus)
+	mux.HandleFunc("/api/kernel/apply", apiKernelSet)
+	mux.HandleFunc("/api/kernel/governor", apiKernelSet)
+	mux.HandleFunc("/api/kernel/vm", apiKernelSet)
+	mux.HandleFunc("/api/kernel/profile", apiKernelSet)
+
+	// proxy, tunnel, speedtest
+	mux.HandleFunc("/api/proxy/status", apiProxyStatus)
+	mux.HandleFunc("/api/proxy/control", apiProxyControl)
+	mux.HandleFunc("/api/proxy/settings", apiProxyMode)
+	mux.HandleFunc("/api/proxy/subs", apiUnsupported)
+	mux.HandleFunc("/api/proxy/apps", apiUnsupported)
+	mux.HandleFunc("/api/proxy/hotspot", apiUnsupported)
+	mux.HandleFunc("/api/tunnel/status", apiTunnelStatus)
+	mux.HandleFunc("/api/tunnel/start", apiTunnelControl)
+	mux.HandleFunc("/api/tunnel/stop", apiTunnelControl)
+	mux.HandleFunc("/api/tunnel/upload", apiTunnelControl)
+	mux.HandleFunc("/api/speedtest/run", apiSpeedtestRun)
+	mux.HandleFunc("/api/speedtest", apiSpeedtestRun)
+
+	// berkas
+	mux.HandleFunc("/api/files/list", apiFilesList)
+	mux.HandleFunc("/api/files/storage", apiFilesStorage)
+	mux.HandleFunc("/api/files/read", apiFilesRead)
+	mux.HandleFunc("/api/files/save", apiFilesWrite)
+	mux.HandleFunc("/api/files/write", apiFilesWrite)
+	mux.HandleFunc("/api/files/download", apiFilesDownload)
+	mux.HandleFunc("/api/files/upload", apiFilesUpload)
+	for _, a := range []string{"delete", "mkdir", "create", "rename", "move", "copy", "permissions",
+		"compress", "extract", "search", "batch"} {
+		mux.HandleFunc("/api/files/"+a, apiFilesAction)
+	}
+
+	// NAS
+	mux.HandleFunc("/api/nas/status", apiNAS)
+	mux.HandleFunc("/api/nas/start", apiNAS)
+	mux.HandleFunc("/api/nas/stop", apiNAS)
+	mux.HandleFunc("/api/nas/config", apiNAS)
 	mux.HandleFunc("/api/", apiUnsupported)
 	mux.HandleFunc("/", staticHandler)
 
 	go func() { run(10, "mmcli", "-m", "any", "--signal-setup=5") }()
+	go func() {
+		time.Sleep(20 * time.Second)
+		smsCacheSet(fetchInbox(8))
+		go SMSWarmer()
+	}()
 	logf("bfr-adapter di :%s", port)
 	if err := (&http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}).ListenAndServe(); err != nil {
 		logf("gagal: %v", err)
@@ -318,6 +399,15 @@ func lteCached() map[string]string {
 	for _, l := range strings.Split(run(6, "mmcli", "-m", "any", "-K"), "\n") {
 		if i := strings.Index(l, ":"); i > 0 {
 			out[strings.TrimSpace(l[:i])] = strings.TrimSpace(l[i+1:])
+		}
+	}
+	for _, l := range strings.Split(run(6, "mmcli", "-m", "any", "--location-get"), "\n") {
+		k, v := fieldOf(l)
+		switch k {
+		case "cell id":
+			out["loc.cell"] = v
+		case "tracking area code":
+			out["loc.tac"] = v
 		}
 	}
 	for _, l := range strings.Split(run(6, "mmcli", "-m", "any", "--signal-get"), "\n") {

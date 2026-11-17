@@ -1,18 +1,17 @@
-# Paket terpasang di rolex (diambil dari `opkg list-installed` di perangkat).
-# Dipakai tools/reinstall-packages.sh kalau perangkat di-flash ulang dengan image baru.
-# '[HG]' = asalnya dari image HG680P (tidak ada di feed resmi untuk aarch64_generic),
-#        pasang ulang lewat: tools/port-from-image.py (lihat docs/rolex-fitur-port.md).
-#
 bandix
 base-files
 bash
 blkid
 block-mount
+btop
 busybox
 ca-bundle
 cgi-io
 chat
+cloudflared
 comgt
+coreutils
+coreutils-timeout
 curl
 dbus
 dnsmasq
@@ -20,16 +19,20 @@ dnsmasq-full
 dropbear
 e2fsprogs
 firewall4
+flock
 fstools
 fwtool
 getrandom
 glib2
 grub2-efi-arm
 hostapd-common
+htop
 internet-detector
 ip-full
 iw
+iwinfo
 jansson4
+jq
 jshn
 jsonfilter
 kernel
@@ -110,6 +113,7 @@ librt
 libruby3.3
 libsqlite3-0
 libss2
+libstdcpp6
 libubox20240329
 libubus-lua
 libubus20250102
@@ -123,6 +127,7 @@ libuuid1
 libuv1
 libwebp
 libwebsockets-full
+libxml2-16
 libyaml
 logd
 lua
@@ -130,11 +135,13 @@ lua-bit32
 luaposix
 luci
 luci-app-3ginfo-lite
+luci-app-argon-config
 luci-app-bandix
 luci-app-crontab-wizard
 luci-app-diskman
 luci-app-firewall
 luci-app-internet-detector
+luci-app-neko
 luci-app-nikki
 luci-app-openclash
 luci-app-package-manager
@@ -158,6 +165,7 @@ luci-mod-system
 luci-proto-ipv6
 luci-proto-ppp
 luci-ssl
+luci-theme-argon
 luci-theme-bootstrap
 mkf2fs
 modemmanager
@@ -167,9 +175,20 @@ nftables-json
 nikki
 odhcp6c
 odhcpd-ipv6only
+oniguruma5
 openwrt-keyring
 opkg
 parted
+php8
+php8-cgi
+php8-mod-ctype
+php8-mod-curl
+php8-mod-mbstring
+php8-mod-openssl
+php8-mod-pdo
+php8-mod-session
+php8-mod-sockets
+php8-mod-sqlite3
 ppp
 ppp-mod-pppoe
 procd
@@ -220,8 +239,10 @@ usbutils
 usign
 vnstat2
 vnstati2
+wget-ssl
 wifi-scripts
 wireless-regdb
 wpad-mbedtls
 yq
 zlib
+zoneinfo-core

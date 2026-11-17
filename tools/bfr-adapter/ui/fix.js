@@ -12,6 +12,11 @@
 	const HIDE_CARDS = ['cpu scaling & scheduling policy', 'battery & power'];
 	const HIDE_VALUES = ['n/a', '-', '--', '(-)', 'tidak ada baterai', 'standard android'];
 	const HIDE_CHIPS = ['0%'];
+	// menu/tab yang tidak mungkin di rolex (NAS & Scrcpy sengaja TIDAK dihapus)
+	const HIDE_NAV = [
+		'snapdragon qmi', 'samsung ril', 'google tensor',
+		'charger', 'modules', 'partitions', 'telegram'
+	];
 
 	function len(x) { return (x.textContent || '').trim().length; }
 
@@ -46,8 +51,23 @@
 			if (HIDE_LABELS.some(h => low === h || low.startsWith(h))) { hide(el); continue; }
 			if (HIDE_VALUES.includes(low)) { hide(el); continue; }
 			if (HIDE_CHIPS.includes(low) && el.children.length === 0) { hide(el); continue; }
+			if (HIDE_NAV.includes(low)) {
+				// item menu: sembunyikan tautan/kartu pilihannya, bukan seluruh dropdown
+				const item = el.closest('a, button, [role="menuitem"], li') || el;
+				item.style.display = 'none';
+				continue;
+			}
 
 			if (el.children.length === 0) {
+				// ganti istilah Android di teks bebas -> OpenWrt
+				if (/\bAndroid\b/.test(raw)) {
+					el.textContent = raw.replace(/\bAndroid\b/g, 'OpenWrt');
+					continue;
+				}
+				if (/Logcat/i.test(raw)) {
+					el.textContent = raw.replace(/Logcat/gi, 'log sistem');
+					continue;
+				}
 				if (/\(API[^)]*\)/i.test(raw)) {
 					const cleaned = raw.replace(/\s*\(API[^)]*\)/i, '').trim();
 					if (cleaned !== raw) { el.textContent = cleaned; return; }
