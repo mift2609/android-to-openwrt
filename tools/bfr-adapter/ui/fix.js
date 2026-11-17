@@ -19,7 +19,8 @@
 		'at', 'at terminal', 'at console', 'at console terminal'];
 	// pola teks yang menandakan baris kosong (mis. "N/A (No TA broadcast)")
 	const HIDE_PATTERNS = [/\bno ta broadcast\b/i, /\bn\/a \(/i, /\bmasked$/i];
-	const HIDE_VALUES = ['n/a', '-', '--', '(-)', 'tidak ada baterai', 'standard android'];
+	const HIDE_VALUES = ['n/a', '-', '--', '(-)', 'tidak ada baterai', 'standard android',
+		'android 16 masked', 'android 16', 'masked'];
 	const HIDE_CHIPS = []; // sengaja kosong: chip persen jangan disembunyikan (risiko kena kartu lain)
 	// menu/tab yang tidak mungkin di rolex (NAS & Scrcpy sengaja TIDAK dihapus)
 	const HIDE_NAV = [
@@ -72,15 +73,6 @@
 			const raw = (el.textContent || '').trim();
 			if (!raw) continue;
 			const low = raw.toLowerCase();
-
-			// isi yang sudah tampil di kartu "Kontrol Modem LTE" di bawah — jangan dobel di atas
-			if (raw.length < 40 && /^(physical cell id|earfcn)/i.test(raw)) {
-				// sembunyikan barisnya (label + nilainya), bukan hanya labelnya
-				let row = el;
-				for (let i = 0; i < 4 && row.parentElement && row.parentElement.children.length <= 2; i++) row = row.parentElement;
-				if (row.style) { row.style.display = 'none'; row.setAttribute('data-why', 'dobel'); }
-				continue;
-			}
 
 			// pola hanya untuk elemen kecil (jangan pernah mengenai pembungkus halaman)
 			if (raw.length <= 120 && el.children.length <= 2) {
