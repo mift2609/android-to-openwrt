@@ -94,6 +94,8 @@ func main() {
 
 	// proxy, tunnel, speedtest
 	mux.HandleFunc("/api/proxy/status", apiProxyStatus)
+	mux.HandleFunc("/api/proxy/engine", apiProxyEngineStatus)
+	mux.HandleFunc("/api/proxy/engine/action", apiProxyEngineAction)
 	mux.HandleFunc("/api/proxy/control", apiProxyControl)
 	mux.HandleFunc("/api/proxy/settings", apiProxyMode)
 	mux.HandleFunc("/api/proxy/watchdog", apiProxyWatchdog)

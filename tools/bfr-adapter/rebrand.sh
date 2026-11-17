@@ -61,6 +61,8 @@ CAP=$(date +%y%m%d-%H%M)
 sed -i "1s#^#// build $CAP\n#" modem-page.js fix.js 2>/dev/null || true
 cp ../ui/modem-page.js modem-page.js   # halaman Cellular: ganti isi bawaan dengan kartu sendiri
 sed -i "1s#^#// build $CAP\n#" modem-page.js
+cp ../ui/proxy-card.js proxy-card.js
+sed -i "1s#^#// build $CAP\n#" proxy-card.js
 echo "$CAP" > versi.txt
 echo "cap versi  : $CAP"
 if ! grep -q 'src="/fix.js?v=' index.html; then
@@ -68,6 +70,9 @@ if ! grep -q 'src="/fix.js?v=' index.html; then
 fi
 if ! grep -q 'src="/modem-page.js?v=' index.html; then
 	sed -i 's#</body>#<script src="/modem-page.js?v='"$CAP"'"></script></body>#' index.html
+fi
+if ! grep -q 'src="/proxy-card.js?v=' index.html; then
+	sed -i 's#</body>#<script src="/proxy-card.js?v='"$CAP"'"></script></body>#' index.html
 fi
 
 python3 ../prune-tabs.py . || echo "(prune gagal, lanjut)"
