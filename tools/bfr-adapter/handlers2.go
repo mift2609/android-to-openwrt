@@ -907,13 +907,16 @@ func apiNAS(w http.ResponseWriter, r *http.Request) {
 				jsonOut(w, map[string]any{"success": false, "error": "nama & path wajib"})
 				return
 			}
-			run(10, "sh", "-c", "uci -q delete samba4."+san(b.Name)+" 2>/dev/null; "+
-				"uci set samba4."+san(b.Name)+"=samba4; "+
+			// tipe section HARUS "sambashare" (init samba4 memakai config_foreach sambashare)
+			run(20, "sh", "-c", "uci -q delete samba4."+san(b.Name)+" 2>/dev/null; "+
+				"uci set samba4."+san(b.Name)+"=sambashare; "+
 				"uci set samba4."+san(b.Name)+".name='"+san(b.Name)+"'; "+
 				"uci set samba4."+san(b.Name)+".path='"+san(b.Path)+"'; "+
 				"uci set samba4."+san(b.Name)+".browseable='yes'; "+
 				"uci set samba4."+san(b.Name)+".read_only='no'; "+
-				"uci set samba4."+san(b.Name)+".guest_ok='yes'; uci commit samba4; /etc/init.d/samba4 restart")
+				"uci set samba4."+san(b.Name)+".users='rolex'; "+
+				"uci set samba4."+san(b.Name)+".force_root='1'; "+
+				"uci commit samba4; /etc/init.d/samba4 restart")
 			jsonOut(w, map[string]any{"success": true, "message": "Share " + b.Name + " ditambahkan"})
 			return
 		}
