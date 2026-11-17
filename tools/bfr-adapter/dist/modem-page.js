@@ -164,7 +164,40 @@
 		if (s) s.textContent = msg;
 	}
 
+	// kotak bawaan halaman ikut diisi (sebagian pemasangan BFR tidak mengikat datanya)
+	const KOSONG = /^(-{1,2}|n\/a|)$/i;
+
+	function isiBawaan() {
+		if (!onModem()) return;
+		const c = last.cell || {}, g = last.sig || {};
+		// PENTING: halaman menggambar kartu ini dua kali (desktop + ponsel, satu disembunyikan).
+		// Isi SEMUA salinan, jangan hanya yang pertama — kalau tidak, yang terlihat tetap kosong.
+		const tulis = (rx, v) => {
+			if (v == null || v === '') return;
+			const t = String(v);
+			document.querySelectorAll('div,span').forEach(label => {
+				if (label.children.length > 1) return;
+				if (!rx.test((label.textContent || '').trim())) return;
+				const row = label.parentElement;
+				if (!row) return;
+				for (const box of row.children) {
+					if (box === label) continue;
+					if ((box.textContent || '').trim() !== t) box.textContent = t;
+					// kotak ini mungkin pernah disembunyikan fix.js saat isinya masih "--"
+					if (box.style && box.style.display === 'none') box.style.display = '';
+					if (box.removeAttribute) box.removeAttribute('data-why');
+				}
+			});
+		};
+		tulis(/^rsrp \(power\)$/i, c.rsrp && c.rsrp + ' dBm');
+		tulis(/^rsrq \(quality\)$/i, c.rsrq && c.rsrq + ' dB');
+		tulis(/^sinr \(snr\)$/i, c.sinr && c.sinr + ' dB');
+		tulis(/^earfcn \(channel\)$/i, c.earfcn);
+		tulis(/^physical cell id \(pci\)$/i, c.pci);
+	}
+
 	function fill() {
+		isiBawaan();
 		const el = document.getElementById(ID);
 		if (!el) return;
 		const c = last.cell || {}, s = last.sig || {};
@@ -299,7 +332,11 @@
 		if (!document.getElementById(ID)) mount();
 		if (!document.getElementById('mm-bar')) barBawaan();
 	}, 1500);
-	new MutationObserver(() => { if (onModem() && (!document.getElementById(ID) || !document.getElementById('mm-bar'))) mount(); })
+	new MutationObserver(() => {
+		if (!onModem()) return;
+		if (!document.getElementById(ID) || !document.getElementById('mm-bar')) mount();
+		isiBawaan();
+	})
 		.observe(document.body, { childList: true, subtree: true });
 	function pasang() {
 		if (!onModem()) return;

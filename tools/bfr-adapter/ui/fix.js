@@ -103,7 +103,10 @@
 			if (raw.length <= 120 && el.children.length <= 2) {
 				const lab = HIDE_LABELS.find(h => low === h || low.startsWith(h));
 				if (lab) { hide(el, 'label:' + lab.slice(0, 16)); continue; }
-				if (HIDE_VALUES.includes(low)) { hide(el, 'nilai'); continue; }
+				// di halaman Cellular jangan sembunyikan nilai kosong: kotak "--" itu nanti
+				// diisi oleh adaptor (RSRP/EARFCN/PCI) -> kalau disembunyikan, angkanya tak terlihat
+				const diModem = (location.hash || '').indexOf('#modem') === 0;
+				if (HIDE_VALUES.includes(low) && !diModem) { hide(el, 'nilai'); continue; }
 			}
 			if (HIDE_CHIPS.includes(low) && el.children.length === 0) {
 				const chip = el.closest('span, div') || el;
