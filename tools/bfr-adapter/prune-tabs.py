@@ -29,6 +29,54 @@ SUBTABS = [
     "{id:`at`,label:`AT Console Terminal`,icon:S}",
 ]
 
+# baris <div ...>label<span class="text-muted">LABEL</span> ... </div> yang tidak berlaku
+# dihapus dari bundel (bukan disembunyikan lewat JS)
+BARIS_BUANG = []  # pemotongan markup merusak komponen Svelte -> kosongkan
+
+
+def _blok_div(js: str, pos: int) -> tuple:
+    """cari blok <div ...> ... </div> yang membungkus posisi pos (pencocokan bersarang)"""
+    awal = js.rfind("<div", 0, pos)
+    if awal < 0:
+        return (-1, -1)
+    i = awal
+    depth = 0
+    while i < len(js):
+        nxt_open = js.find("<div", i)
+        nxt_close = js.find("</div>", i)
+        if nxt_close < 0:
+            return (-1, -1)
+        if 0 <= nxt_open < nxt_close:
+            depth += 1
+            i = nxt_open + 4
+        else:
+            depth -= 1
+            i = nxt_close + 6
+            if depth == 0:
+                return (awal, i)
+    return (-1, -1)
+
+
+def hapus_baris(d: Path) -> list:
+    hasil = []
+    for f in d.glob("assets/TabModem-*.js"):
+        js = f.read_text()
+        for label in BARIS_BUANG:
+            n = 0
+            for _ in range(4):  # beberapa kemungkinan salinan
+                pos = js.find('<span class="text-muted">' + label + "</span>")
+                if pos < 0:
+                    break
+                a, b = _blok_div(js, pos)
+                if a < 0:
+                    break
+                js = js[:a] + js[b:]
+                n += 1
+            hasil.append(f"  {label:20} dihapus={n}")
+        f.write_text(js)
+    return hasil
+
+
 def prune_subtabs(d: Path) -> int:
     n = 0
     for f in d.glob("assets/TabModem-*.js"):
@@ -78,6 +126,8 @@ def main(dist: str) -> int:
         html.write_text(h)
 
     nsub = prune_subtabs(d)
+    for baris in hapus_baris(d):
+        print("baris", baris)
     print("buang sub-tab Cellular:", nsub, "entri")
     print("buang tab dari bundel:")
     print("\n".join(laporan))
