@@ -4,6 +4,7 @@
 (function () {
 	document.documentElement.setAttribute('data-fix', '1');
 	const HIDE_LABELS = [
+		'active band',
 		'security patch', 'resolution & density', 'active governor policy',
 		'zram', 'selinux', 'sdk', 'android api',
 		'charge level', 'battery temp', 'battery level', 'health', 'voltage',

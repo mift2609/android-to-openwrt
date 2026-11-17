@@ -9,6 +9,7 @@ package main
 //   rolex-data-reset modem                      -> reboot modem MSS
 
 import (
+	"os"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -26,7 +27,27 @@ var (
 // baca 3ginfo (cached; pemanasan di latar oleh cellWarmer)
 var g3Busy bool
 
+const cellFile = "/tmp/bfr-cell.json"
+
+// muat nilai sel terakhir dari disk (bertahan setelah adaptor restart)
+func cellLoad() {
+	cellMu.Lock()
+	defer cellMu.Unlock()
+	if cellVal != nil {
+		return
+	}
+	raw, err := os.ReadFile(cellFile)
+	if err != nil || len(raw) < 10 {
+		return
+	}
+	out := map[string]any{}
+	if json.Unmarshal(raw, &out) == nil && len(out) > 0 {
+		cellVal, cellAt = out, time.Now().Add(-time.Minute) // dianggap basi -> disegarkan di latar
+	}
+}
+
 func g3() map[string]any {
+	cellLoad()
 	cellMu.Lock()
 	cached := cellVal
 	fresh := cellVal != nil && time.Since(cellAt) < 90*time.Second
@@ -51,6 +72,11 @@ func g3() map[string]any {
 				cellVal, cellAt = out, time.Now()
 				g3Busy = false
 				cellMu.Unlock()
+				if len(out) > 0 {
+					if b, err := json.Marshal(out); err == nil {
+						os.WriteFile(cellFile, b, 0o644)
+					}
+				}
 			}()
 		}
 		return map[string]any{}

@@ -62,28 +62,9 @@
 		  </div>
 
 		  <div style="margin-bottom:14px">
-		    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8b93a5;margin-bottom:5px">
-		      <span>Kekuatan sinyal</span><span id="mm-pct" style="color:${warna};font-weight:800">${b}% · ${label}</span></div>
-		    <div style="height:14px;background:#10141d;border:1px solid #272e3c;border-radius:8px;overflow:hidden">
-		      <div id="mm-fill" style="height:100%;width:${b}%;background:${warna};transition:width .5s ease"></div></div>
-		  </div>
-
-		  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:14px">
-		    ${kotak('RSRP', c.rsrp && c.rsrp + ' dBm')}
-		    ${kotak('RSRQ', c.rsrq && c.rsrq + ' dB')}
-		    ${kotak('SINR', c.sinr && c.sinr + ' dB')}
-		    ${kotak('Mode', last.sig && last.sig.network_type)}
-		    ${kotak('Operator', c.operator)}
-		    ${kotak('Band', c.band || c.pband)}
-		    ${kotak('PCI', c.pci)}
-		    ${kotak('EARFCN', c.earfcn)}
-		    ${kotak('Cell ID', c.cell_id)}
-		    ${kotak('TAC', c.tac_hex || c.tac)}
-		  </div>
-
-		  <div style="border-top:1px dashed #272e3c;padding-top:12px;margin-bottom:12px">
 		    <div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8b93a5;margin-bottom:7px">Jaringan &amp; SIM</div>
 		    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px">
+		      ${kotak('Band', c.band || c.pband)}
 		      ${kotak('IP modem', c.ip)}
 		      ${kotak('Gateway', c.gateway)}
 		      ${kotak('DNS', c.dns)}
@@ -139,6 +120,39 @@
 		return el;
 	}
 
+	// bar kekuatan sinyal disisipkan ke kartu bawaan "Cellular Radio Signal"
+	// (tepat di bawah judul, sebelum kotak RSRP/RSRQ/SINR)
+	function cardOf(rx) {
+		const head = leaf(rx);
+		if (!head) return null;
+		let card = head;
+		for (let i = 0; i < 12; i++) {
+			const cs = getComputedStyle(card);
+			if ((parseFloat(cs.borderTopWidth) || 0) > 0 && (parseFloat(cs.borderTopLeftRadius) || 0) > 3) return card;
+			if (!card.parentElement) break;
+			card = card.parentElement;
+		}
+		return null;
+	}
+
+	function barBawaan() {
+		if (!onModem()) return;
+		const card = cardOf(/^cellular radio signal$/i);
+		if (!card || document.getElementById('mm-bar')) return;
+		const el = document.createElement('div');
+		el.id = 'mm-bar';
+		el.style.cssText = 'padding:2px 0 10px';
+		el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8b93a5;margin-bottom:5px">
+		    <span>Kekuatan sinyal</span><span id="mm-bar-pct" style="color:#8b93a5;font-weight:800">-</span></div>
+		  <div style="height:13px;background:#10141d;border:1px solid #272e3c;border-radius:8px;overflow:hidden">
+		    <div id="mm-bar-fill" style="height:100%;width:0%;background:#8b93a5;transition:width .5s ease"></div></div>`;
+		const petak = [...card.querySelectorAll('*')].find(e => e.children.length <= 2 && /rsrp \(power\)/i.test((e.textContent || '').trim()));
+		let atas = petak;
+		while (atas && atas.parentElement && atas.parentElement !== card) atas = atas.parentElement;
+		if (atas && atas.parentElement === card) card.insertBefore(el, atas);
+		else card.appendChild(el);
+	}
+
 	function say(msg) {
 		const s = document.getElementById('mm-status');
 		if (s) s.textContent = msg;
@@ -154,16 +168,8 @@
 			const t = (v == null || v === '') ? '-' : String(v);
 			if (box.textContent !== t) box.textContent = t;
 		};
-		set('RSRP', c.rsrp && c.rsrp + ' dBm');
-		set('RSRQ', c.rsrq && c.rsrq + ' dB');
-		set('SINR', c.sinr && c.sinr + ' dB');
 		set('Mode', s.network_type);
-		set('Operator', c.operator);
 		set('Band', c.band || c.pband);
-		set('PCI', c.pci);
-		set('EARFCN', c.earfcn);
-		set('Cell ID', c.cell_id);
-		set('TAC', c.tac_hex || c.tac);
 		set('IP modem', c.ip);
 		set('Gateway', c.gateway);
 		set('DNS', c.dns);
@@ -175,6 +181,9 @@
 		const warna = b >= 70 ? '#34d399' : b >= 45 ? '#fbbf24' : b >= 20 ? '#fb923c' : '#f87171';
 		const label = b >= 70 ? 'kuat' : b >= 45 ? 'sedang' : b >= 20 ? 'lemah' : 'sangat lemah';
 		const f = el.querySelector('#mm-fill'), p = el.querySelector('#mm-pct');
+		const f2 = document.getElementById('mm-bar-fill'), p2 = document.getElementById('mm-bar-pct');
+		if (f2) { f2.style.width = b + '%'; f2.style.background = warna; }
+		if (p2) { p2.textContent = b + '% · ' + label; p2.style.color = warna; }
 		if (f) { f.style.width = b + '%'; f.style.background = warna; }
 		if (p) { p.textContent = b + '% · ' + label; p.style.color = warna; }
 
@@ -205,6 +214,7 @@
 			const s = await batas(api('/api/modem/signal'), 8000);
 			if (c) last.cell = c;
 			if (s) last.sig = s;
+			barBawaan();
 			fill();
 			say('diperbarui ' + new Date().toLocaleTimeString('id-ID', { hour12: false }) +
 				(last.rot && last.rot.mins ? ' • rotasi ' + last.rot.mins + ' mnt' : ' • rotasi mati'));
@@ -228,37 +238,38 @@
 		setTimeout(load, 2500);
 	}
 
-	// sembunyikan isi bawaan halaman, pasang kartu kita
+	// isi bawaan halaman tetap tampil (kartunya terisi sendiri dari adaptor);
+	// kita hanya MENAMBAH: bar kekuatan sinyal di kartu bawaan + kartu kontrol di bawahnya.
 	function mount() {
 		if (!onModem()) {
 			const old = document.getElementById(ID);
 			if (old) old.remove();
-			document.querySelectorAll('[' + HIDE + ']').forEach(e => {
-				e.style.display = '';
-				e.removeAttribute(HIDE);
-			});
+			const bar = document.getElementById('mm-bar');
+			if (bar) bar.remove();
 			return;
 		}
-		const body = pageBody();
-		if (!body) return;
+		// kartu dipasang di wadah utama aplikasi (bukan di dalam isi halaman yang
+		// suka digambar ulang Svelte) supaya tidak pernah ikut terhapus
+		const host = document.querySelector('main') || document.body;
 		let el = document.getElementById(ID);
 		if (!el) {
 			el = build();
-			body.insertBefore(el, body.firstChild);
+			host.appendChild(el);
 			load();
+		} else if (el.parentElement !== host) {
+			host.appendChild(el);
 		}
-		for (const k of body.children) {
-			if (k === el) continue;
-			if (k.getAttribute(HIDE) === '1') continue;
-			k.setAttribute(HIDE, '1');
-			k.style.display = 'none';
-		}
+		barBawaan(); // bar di kartu "Cellular Radio Signal"
 	}
 
 	setInterval(() => { if (onModem()) load(); }, 10000); // nilai sinyal tiap 10 detik
 	// halaman digambar ulang oleh Svelte -> coba pasang lagi secara berkala
-	setInterval(() => { if (onModem() && !document.getElementById(ID)) mount(); }, 1500);
-	new MutationObserver(() => { if (onModem() && !document.getElementById(ID)) mount(); })
+	setInterval(() => {
+		if (!onModem()) return;
+		if (!document.getElementById(ID)) mount();
+		if (!document.getElementById('mm-bar')) barBawaan();
+	}, 1500);
+	new MutationObserver(() => { if (onModem() && (!document.getElementById(ID) || !document.getElementById('mm-bar'))) mount(); })
 		.observe(document.body, { childList: true, subtree: true });
 	function pasang() {
 		if (!onModem()) return;
