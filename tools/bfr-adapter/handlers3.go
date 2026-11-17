@@ -24,19 +24,38 @@ var (
 )
 
 // baca 3ginfo (cached; pemanasan di latar oleh cellWarmer)
+var g3Busy bool
+
 func g3() map[string]any {
 	cellMu.Lock()
-	defer cellMu.Unlock()
-	if cellVal != nil && time.Since(cellAt) < 90*time.Second {
-		return cellVal
+	cached := cellVal
+	fresh := cellVal != nil && time.Since(cellAt) < 90*time.Second
+	busy := g3Busy
+	cellMu.Unlock()
+	if fresh {
+		return cached
 	}
-	out := map[string]any{}
-	raw := run(60, "/usr/bin/rolex-3ginfo-json")
-	if json.Unmarshal([]byte(raw), &out) != nil || out == nil {
-		out = map[string]any{}
+	if cached == nil {
+		// belum ada data: isi di latar, balas segera supaya UI tidak menggantung
+		if !busy {
+			cellMu.Lock()
+			g3Busy = true
+			cellMu.Unlock()
+			go func() {
+				out := map[string]any{}
+				raw := run(60, "/usr/bin/rolex-3ginfo-json")
+				if json.Unmarshal([]byte(raw), &out) != nil || out == nil {
+					out = map[string]any{}
+				}
+				cellMu.Lock()
+				cellVal, cellAt = out, time.Now()
+				g3Busy = false
+				cellMu.Unlock()
+			}()
+		}
+		return map[string]any{}
 	}
-	cellVal, cellAt = out, time.Now()
-	return out
+	return cached // basi sedikit tapi cepat; penyegaran di latar
 }
 
 func cellWarmer() {
@@ -71,10 +90,10 @@ func apiModemCell(w http.ResponseWriter, r *http.Request) {
 		}(),
 		"tac":      pick("tac_d", "tac", "tac_dec"),
 		"tac_hex":  pick("tac_hex", "tac_h"),
-		"rsrp":     pick("rsrp"),
-		"rsrq":     pick("rsrq"),
-		"sinr":     pick("snr", "sinr", "snr_db"),
-		"rssi":     pick("rssi"),
+		"rsrp":     dec(pick("rsrp")),
+		"rsrq":     dec(pick("rsrq")),
+		"sinr":     dec(pick("snr", "sinr", "snr_db")),
+		"rssi":     dec(pick("rssi")),
 		"operator": pick("operator_name", "operator"),
 		"mode":     pick("mode", "connt"),
 		"ip":       pick("ip", "ipv4"),

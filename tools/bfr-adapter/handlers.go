@@ -20,6 +20,23 @@ func apiModemSignal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l := lteCached()
+	// nilai sinyal dibaca langsung dari modem (cepat) dan dicache hanya 2 detik,
+	// karena RSRP/SINR berubah cepat.
+	if !sigFresh() {
+		for _, ln := range strings.Split(run(6, "mmcli", "-m", "any", "--signal-get"), "\n") {
+			k, v := field(ln)
+			switch k {
+			case "rssi":
+				l["sig.rssi"] = v
+			case "rsrp":
+				l["sig.rsrp"] = v
+			case "rsrq":
+				l["sig.rsrq"] = v
+			case "s/n", "snr":
+				l["sig.snr"] = v
+			}
+		}
+	}
 	band := run(6, "uci", "-q", "get", "rolexlte.main.band")
 	if band == "" || band == "0" {
 		band = "-"
@@ -39,17 +56,17 @@ func apiModemSignal(w http.ResponseWriter, r *http.Request) {
 		"network_type": strings.ToUpper(l["modem.generic.access-technologies.value[1]"]),
 		"registration": l["modem.3gpp.registration-state"],
 		"ps_state":     l["modem.3gpp.packet-service-state"],
-		"rssi":         solo(l["sig.rssi"]),
-		"rsrp":         solo(l["sig.rsrp"]),
-		"rsrq":         solo(l["sig.rsrq"]),
+		"rssi":         dec(solo(l["sig.rssi"])),
+		"rsrp":         dec(solo(l["sig.rsrp"])),
+		"rsrq":         dec(solo(l["sig.rsrq"])),
 		"sinr": func() string {
-			if v := solo(l["sig.snr"]); v != "" {
+			if v := dec(solo(l["sig.snr"])); v != "" {
 				return v
 			}
 			for _, k := range []string{"snr", "sinr", "snr_db"} {
 				if v, ok := g[k]; ok && v != nil {
 					if f := strings.Fields(toStr(v) + " "); len(f) > 0 && f[0] != "" {
-						return f[0]
+						return dec(f[0])
 					}
 				}
 			}
@@ -66,6 +83,21 @@ func apiModemSignal(w http.ResponseWriter, r *http.Request) {
 		"earfcn": g["earfcn"],
 		"pband":  g["pband"],
 	})
+}
+
+var (
+	sigMu sync.Mutex
+	sigAt time.Time
+)
+
+func sigFresh() bool {
+	sigMu.Lock()
+	defer sigMu.Unlock()
+	if time.Since(sigAt) < 2*time.Second {
+		return true
+	}
+	sigAt = time.Now()
+	return false
 }
 
 func signalPct(rsrp string) int {
@@ -867,4 +899,31 @@ func kvOf(out string) map[string]string {
 		}
 	}
 	return m
+}
+
+// field: pisahkan "kunci: nilai" dari baris keluaran mmcli (mis. "  LTE | rsrp: -95.00 dBm")
+func field(line string) (string, string) {
+	if i := strings.LastIndex(line, "|"); i >= 0 {
+		line = line[i+1:]
+	}
+	i := strings.Index(line, ":")
+	if i < 0 {
+		return "", ""
+	}
+	return strings.TrimSpace(line[:i]), strings.TrimSpace(line[i+1:])
+}
+
+
+// dec: samakan format angka sinyal menjadi 1 desimal (mis. "-90.0"), kosong tetap kosong.
+func dec(v any) string {
+	s := strings.TrimSpace(toStr(v))
+	if s == "" {
+		return ""
+	}
+	f := strings.Fields(s)[0]
+	x, err := strconv.ParseFloat(f, 64)
+	if err != nil {
+		return f
+	}
+	return strconv.FormatFloat(x, 'f', 1, 64)
 }

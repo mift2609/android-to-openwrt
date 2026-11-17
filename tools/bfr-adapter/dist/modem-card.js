@@ -80,6 +80,25 @@
 		return el;
 	}
 
+	// perbarui hanya angka yang berubah cepat (RSRP/RSRQ/SINR) tiap 2 detik
+	async function liveSignal() {
+		if ((location.hash || '').indexOf('#modem') !== 0) return;
+		const grid = document.querySelector('#mc-cell');
+		if (!grid) return;
+		try {
+			const s = await api('/api/modem/signal');
+			const set = (label, val) => {
+				const box = [...grid.children].find(c => (c.firstElementChild || {}).textContent === label);
+				if (box && box.lastElementChild) box.lastElementChild.textContent = (val == null || val === '') ? '-' : String(val);
+			};
+			set('RSRP', s.rsrp);
+			set('RSRQ', s.rsrq);
+			set('SINR', s.sinr);
+			const st = document.getElementById('mc-status');
+			if (st && /memuat/.test(st.textContent)) st.textContent = 'data sinyal langsung';
+		} catch (e) { /* diamkan */ }
+	}
+
 	function say(msg) {
 		const s = document.getElementById('mc-status');
 		if (s) s.textContent = msg;
@@ -107,7 +126,7 @@
 			const kv = [
 				['PCI', c.pci], ['EARFCN', c.earfcn], ['Band', c.band],
 				['Cell ID', c.cell_id], ['TAC', c.tac_hex || c.tac],
-				['RSRP', c.rsrp], ['SINR', c.sinr], ['Operator', c.operator]
+				['RSRP', c.rsrp], ['RSRQ', c.rsrq], ['SINR', c.sinr], ['Operator', c.operator]
 			];
 			cell.innerHTML = kv.map(([k, v]) =>
 				`<div style="background:#10141d;border:1px solid #272e3c;border-radius:7px;padding:6px 8px">
@@ -140,8 +159,23 @@
 		if (host && el && host.lastElementChild !== el) host.appendChild(el);
 	}
 
+	// Tab Cellular bawaan BFR tidak punya polling sendiri: klik "Refresh All"
+	// secara berkala, dan sekali setiap kali tab ini dibuka dari menu lain.
+	function autoRefresh() {
+		if ((location.hash || '').indexOf('#modem') !== 0) return;
+		const btn = [...document.querySelectorAll('button')].find(b => /refresh all/i.test((b.textContent || '').trim()));
+		if (btn) btn.click();
+		refresh();
+	}
+	setInterval(autoRefresh, 20000);      // segarkan seluruh halaman tiap 20 s
+	setInterval(liveSignal, 2000);        // nilai yang cepat berubah tiap 2 s
+	document.addEventListener('visibilitychange', () => { if (!document.hidden) autoRefresh(); });
+
 	document.addEventListener('DOMContentLoaded', () => { mount(); keepLast(); });
-	window.addEventListener('hashchange', () => { mount(); keepLast(); });
+	window.addEventListener('hashchange', () => {
+		mount(); keepLast();
+		setTimeout(autoRefresh, 1200); // data segar begitu masuk tab Cellular
+	});
 	new MutationObserver(keepLast).observe(document.body, { childList: true, subtree: true });
 	setInterval(() => { mount(); keepLast(); }, 2500);
 })();
