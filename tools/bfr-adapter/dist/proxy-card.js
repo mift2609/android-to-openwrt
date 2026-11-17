@@ -1,9 +1,11 @@
-// build 261117-2236
-// Kartu "Mesin Proxy" untuk halaman #proxy: OpenClash & Nikki/Mihomo
-// (status, profil, port, tombol mulai/stop/ulang, tautan ke halaman LuCI-nya).
-// Kartu ini berdiri sendiri; isi bawaan halaman tidak diubah.
+// build 261117-2242
+// Halaman #proxy: dua aplikasi terpisah seperti di LuCI —
+// OpenClash sendiri, Nikki/Mihomo sendiri. Masing-masing punya kartu, status,
+// tombol mulai/stop/ulang, dan tautan ke halaman LuCI-nya.
+// Isi bawaan halaman BFR tidak diubah; kartu ini berdiri sendiri.
 (function () {
-	const ID = 'proxy-engine-card';
+	const WADAH = 'proxy-apps';
+	const PREFIX = 'px-app-';
 	const onProxy = () => (location.hash || '').indexOf('#proxy') === 0
 		&& !document.querySelector('input[type=password]');
 	let busy = false;
@@ -18,75 +20,84 @@
 		body: JSON.stringify(body || {})
 	});
 
-	function build() {
+	const kartuEl = key => document.getElementById(PREFIX + key);
+
+	function say(key, m) {
+		const el = kartuEl(key);
+		const s = el && el.querySelector('[data-status]');
+		if (s) s.textContent = m;
+	}
+
+	// kerangka kartu satu aplikasi
+	function kerangka(e) {
 		const el = document.createElement('section');
-		el.id = ID;
+		el.id = PREFIX + e.key;
+		el.setAttribute('data-app', e.key);
 		el.style.cssText = 'margin:14px 0;padding:14px 16px;border:1px solid #272e3c;border-radius:10px;background:#141822;color:#e8eaf0;font:12px/1.6 ui-monospace,monospace';
 		el.innerHTML = `
-		  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
-		    <strong style="letter-spacing:.12em;text-transform:uppercase;font-size:11px;color:#c8cdda">Mesin Proxy</strong>
-		    <span id="px-status" style="color:#8b93a5;font-size:11px">memuat…</span>
+		  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+		    <strong style="letter-spacing:.12em;text-transform:uppercase;font-size:11px;color:#c8cdda">${e.name}</strong>
+		    <span data-status style="color:#8b93a5;font-size:11px">memuat…</span>
 		  </div>
-		  <div id="px-list" style="display:grid;gap:10px"></div>`;
+		  <div data-body></div>`;
 		return el;
 	}
 
-	function kartu(e) {
-		const nyala = !!e.running;
-		const warna = nyala ? '#34d399' : '#8b93a5';
+	// isi kartu: keterangan + tombol
+	function isi(e) {
 		const detail = [];
 		if (e.mode) detail.push('mode ' + e.mode);
 		if (e.profile) detail.push('profil ' + e.profile);
 		if (e.config) detail.push('config ' + e.config);
+		if (e.binary) detail.push('inti ' + e.binary);
 		if (e.ports && e.ports.mixed) detail.push('port ' + [e.ports.http, e.ports.socks, e.ports.mixed].filter(Boolean).join('/'));
+		const btn = (act, label, gaya) =>
+			`<button data-engine="${e.key}" data-act="${act}" style="${gaya}">${label}</button>`;
+		const abu = 'background:#272c38;border:1px solid #3a4152;color:#e8eaf0;border-radius:6px;padding:6px 11px;font:600 11px ui-monospace,monospace;cursor:pointer';
 		return `
-		  <div style="border:1px solid #272e3c;border-radius:8px;padding:10px 12px;background:#10141d">
-		    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-		      <div>
-		        <div style="font-weight:700">${e.name}
-		          <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:${warna}">${nyala ? '● jalan' : '○ mati'}</span>
-		          ${e.enabled ? '<span style="font-size:10px;color:#8b93a5">(ikut boot)</span>' : ''}
-		        </div>
-		        <div style="color:#8b93a5;font-size:11px">${e.installed ? (detail.join(' · ') || 'terpasang') : 'tidak terpasang'}</div>
-		      </div>
-		      <div style="display:flex;gap:6px;flex-wrap:wrap">
-		        <button data-engine="${e.key}" data-act="start" style="background:#5b21b6;border:0;color:#fff;border-radius:6px;padding:6px 11px;font:600 11px ui-monospace,monospace;cursor:pointer">Mulai</button>
-		        <button data-engine="${e.key}" data-act="stop" style="background:#272c38;border:1px solid #3a4152;color:#e8eaf0;border-radius:6px;padding:6px 11px;font:600 11px ui-monospace,monospace;cursor:pointer">Stop</button>
-		        <button data-engine="${e.key}" data-act="restart" style="background:#272c38;border:1px solid #3a4152;color:#e8eaf0;border-radius:6px;padding:6px 11px;font:600 11px ui-monospace,monospace;cursor:pointer">Ulang</button>
-		        <a href="${e.luci}" style="background:#1a1f2b;border:1px solid #2c3444;color:#c8cdda;border-radius:6px;padding:6px 11px;font:600 11px ui-monospace,monospace;text-decoration:none">LuCI</a>
-		      </div>
+		  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap">
+		    <div style="color:#8b93a5;font-size:11px;line-height:1.6">
+		      ${e.installed ? (detail.join(' · ') || 'terpasang') : 'tidak terpasang'}
+		      ${e.enabled ? '<br>ikut dinyalakan saat boot' : ''}
+		    </div>
+		    <div style="display:flex;gap:6px;flex-wrap:wrap">
+		      ${btn('start', 'Mulai', 'background:#5b21b6;border:0;color:#fff;border-radius:6px;padding:6px 11px;font:600 11px ui-monospace,monospace;cursor:pointer')}
+		      ${btn('stop', 'Stop', abu)}
+		      ${btn('restart', 'Ulang', abu)}
+		      <a href="${e.luci}" style="background:#1a1f2b;border:1px solid #2c3444;color:#c8cdda;border-radius:6px;padding:6px 11px;font:600 11px ui-monospace,monospace;text-decoration:none">Buka di LuCI</a>
 		    </div>
 		  </div>`;
 	}
 
-	function say(m) {
-		const s = document.getElementById('px-status');
-		if (s) s.textContent = m;
-	}
-
 	async function load() {
-		const el = document.getElementById(ID);
-		if (!el) return;
+		const wadah = document.getElementById(WADAH);
+		if (!wadah) return;
 		try {
 			const d = await api('/api/proxy/engine');
-			const list = el.querySelector('#px-list');
-			if (list) list.innerHTML = (d.engines || []).map(kartu).join('') || '<div style="color:#8b93a5">tidak ada mesin proxy terpasang</div>';
-			const nyala = (d.engines || []).filter(e => e.running).map(e => e.name);
-			say(nyala.length ? 'aktif: ' + nyala.join(', ') : 'keduanya mati');
-			list.querySelectorAll('button[data-engine]').forEach(b => {
-				b.onclick = () => act(b.getAttribute('data-engine'), b.getAttribute('data-act'));
-			});
-		} catch (e) { say('gagal memuat: ' + e.message); }
+			for (const e of (d.engines || [])) {
+				let card = kartuEl(e.key);
+				if (!card) {
+					card = kerangka(e);
+					wadah.appendChild(card);
+				}
+				const body = card.querySelector('[data-body]');
+				if (body) body.innerHTML = isi(e);
+				say(e.key, e.running ? '● jalan' : '○ mati');
+				body.querySelectorAll('button[data-engine]').forEach(b => {
+					b.onclick = () => act(b.getAttribute('data-engine'), b.getAttribute('data-act'));
+				});
+			}
+		} catch (e) { say('', 'gagal memuat: ' + e.message); }
 	}
 
-	async function act(engine, act) {
+	async function act(engine, action) {
 		if (busy) return;
 		busy = true;
-		say(act + ' ' + engine + '…');
+		say(engine, action + '…');
 		try {
-			const r = await post('/api/proxy/engine/action', { engine: engine, action: act });
-			say(r.message || r.error || 'selesai');
-		} catch (e) { say('gagal: ' + e.message); }
+			const r = await post('/api/proxy/engine/action', { engine: engine, action: action });
+			say(engine, r.message || r.error || 'selesai');
+		} catch (e) { say(engine, 'gagal: ' + e.message); }
 		busy = false;
 		setTimeout(load, 6000);
 		setTimeout(load, 20000);
@@ -94,28 +105,27 @@
 
 	function mount() {
 		if (!onProxy()) {
-			const old = document.getElementById(ID);
-			if (old) old.remove();
+			document.querySelectorAll('[data-app], #' + WADAH).forEach(e => e.remove());
 			return;
 		}
 		const host = document.querySelector('main') || document.body;
-		let el = document.getElementById(ID);
-		if (!el) {
-			el = build();
-			host.appendChild(el);
+		let wadah = document.getElementById(WADAH);
+		if (!wadah) {
+			wadah = document.createElement('div');
+			wadah.id = WADAH;
+			host.appendChild(wadah);
 			load();
-		} else if (el.parentElement !== host) {
-			host.appendChild(el);
+		} else if (wadah.parentElement !== host) {
+			host.appendChild(wadah);
 		}
 	}
 
 	setInterval(() => {
 		if (!onProxy()) {
-			const c = document.getElementById(ID);
-			if (c) c.remove();
+			document.querySelectorAll('[data-app], #' + WADAH).forEach(e => e.remove());
 			return;
 		}
-		if (!document.getElementById(ID)) mount();
+		if (!document.getElementById(WADAH)) mount();
 	}, 1200);
 	setInterval(() => { if (onProxy()) load(); }, 15000);
 	document.addEventListener('DOMContentLoaded', mount);

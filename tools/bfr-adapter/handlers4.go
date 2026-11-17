@@ -69,9 +69,19 @@ func engineStatus(e struct {
 		out["mode"] = uciGet("nikki.config.mode")
 		out["core"] = "mihomo"
 	}
-	// versi biner (dipanggil sekali, cepat)
-	if v := strings.TrimSpace(run(8, "sh", "-c", "ls /usr/bin/mihomo /etc/openclash/core/clash_meta 2>/dev/null | head -1")); v != "" {
-		out["binary"] = v
+	// biner inti masing-masing aplikasi (bukan campur)
+	kandidat := []string{}
+	switch e.Key {
+	case "openclash":
+		kandidat = []string{"/etc/openclash/core/clash_meta", "/etc/openclash/core/clash"}
+	case "nikki":
+		kandidat = []string{"/usr/bin/mihomo", "/usr/bin/nikki", "/etc/nikki/mihomo"}
+	}
+	for _, b := range kandidat {
+		if _, err := os.Stat(b); err == nil {
+			out["binary"] = b
+			break
+		}
 	}
 	return out
 }
