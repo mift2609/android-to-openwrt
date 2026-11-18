@@ -1,0 +1,56 @@
+# Modul netfilter + tty modem yang wajib ada saat boot.
+# kmodloader membaca daftar ini (image ini tidak punya `kmod` penuh), jadi modul yang
+# tidak didaftarkan tidak akan tersedia untuk fw4/nftables walau .ko-nya ada.
+#
+# nftables: rantai NAT + ekspresi `ct state` yang dipakai fw4/firewall4
+nft_chain_nat
+nft_nat
+nft_masq
+nft_redir
+nft_ct
+nft_reject
+nft_reject_inet
+nft_log
+nft_limit
+nft_quota
+nft_connlimit
+nft_numgen
+nft_hash
+nft_osf
+nft_synproxy
+nft_tunnel
+nft_fib_ipv4
+nft_fib_ipv6
+nft_dup_ipv4
+nft_dup_ipv6
+nft_dup_netdev
+nft_fwd_netdev
+nft_tproxy
+nft_socket
+nft_compat
+nf_flow_table
+nf_log_ipv4
+nf_log_arp
+nf_tables_arp
+nf_tables_bridge
+# xtables legacy (iptables) — dipakai NAT rolex + proxy transparan
+xt_TPROXY
+xt_REDIRECT
+xt_socket
+xt_state
+xt_limit
+xt_quota
+xt_mark
+xt_comment
+xt_multiport
+xt_mac
+xt_iprange
+xt_string
+xt_TCPMSS
+xt_hashlimit
+xt_recent
+xt_CT
+xt_NFLOG
+xt_CONNMARK
+# modem: AT lewat rpmsg tty (/dev/ttyRPMSG*)
+rpmsg_tty
