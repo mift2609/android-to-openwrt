@@ -1,0 +1,40 @@
+#!/bin/sh /etc/rc.common
+# rolex-nft-modules — pasang modul netfilter yang dibutuhkan fw4/nftables.
+#
+# Kenapa tidak lewat /etc/modules.d saja: di image ini `modprobe` = kmodloader, dan
+# kmodloader MENCOBA memuat entri /etc/modules.d/** tapi insmod-nya diam-diam tidak
+# menghasilkan modul apa pun (terbukti di perangkat: dmesg cetak "loading kernel modules
+# from 40-rolex-netfilter*" lalu "done" tanpa satu pun modul masuk `lsmod`). `insmod`
+# langsung bekerja, jadi daftar modul di /etc/modules.d/40-rolex-netfilter dibaca di sini
+# dan setiap entri diselesaikan ke path .ko lewat modules.dep.
+#
+# Urutan di daftar itu penting: dependensi harus dimuat lebih dulu (mis. nf_reject_ipv4
+# sebelum nft_reject_inet). Baris komentar (#) diabaikan.
+
+START=18   # sebelum firewall4 (START=19)
+STOP=91
+
+resolve() {
+	local base="$1" name="$2"
+	awk -v m="$name" '{ n=$1; sub(/:$/,"",n); if (n ~ ("(^|/)" m "[.]ko$")) { print n; exit } }' "$base/modules.dep"
+}
+
+start() {
+	local rel base list name path
+	rel=$(uname -r)
+	base="/lib/modules/$rel"
+	list=/etc/modules.d/40-rolex-netfilter
+	[ -f "$list" ] || return 0
+	[ -f "$base/modules.dep" ] || { logger -t rolex-nft-modules "modules.dep tidak ada"; return 1; }
+
+	while read -r name; do
+		case "$name" in ''|\#*) continue ;; esac
+		path=$(resolve "$base" "$name")
+		if [ -z "$path" ]; then
+			logger -t rolex-nft-modules "lewati $name (tidak ada di modules.dep)"
+			continue
+		fi
+		insmod "$base/$path" 2>/dev/null
+	done < "$list"
+	return 0
+}
