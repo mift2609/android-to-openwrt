@@ -49,6 +49,28 @@ kernel `7.1.3` dari `msm89x7-mainline/linux`, ModemManager 1.22 / qmicli 1.34.
 | `tools/rolex/rolex-qmi.c` | QMI langsung lewat QRTR: `uim`, `data`, `up` (tanpa libqmi) |
 | `tools/rolex/build-rootfs-2410.sh` | rakit rootfs 24.10.5 + paket modem (+ `libqrtr.so`, `rolex-qmi`) |
 
+## Port AT (channel DATA1/DATA4)
+
+Modem MSM8917 mengumumkan channel AT sebagai SMD "DATA1"/"DATA4". Rantainya:
+
+1. `rpmsg_wwan_ctrl` **tidak** mengambil keduanya (patch 0002) — port WWAN adalah char
+   device tanpa termios dan alat berbasis tty gagal `tcsetattr`.
+2. `rpmsg_tty` mengklaimnya (patch 0003) → `/dev/ttyRPMSG0` (DATA1), `/dev/ttyRPMSG1` (DATA4).
+
+**Jebakan:** `rpmsg_tty_write()` memakai `rpmsg_get_mtu()` sebelum mengirim, dan
+`rpmsg_get_mtu()` mengembalikan **`-ENOTSUPP` (errno 524)** kalau transport tak mengisi
+`ops->get_mtu` — dan `qcom_smd` memang belum mengisinya. Akibatnya tulis ke
+`/dev/ttyRPMSGx` selalu gagal sebelum satu byte pun dikirim, tanpa pesan kernel. Patch 0004
+memberi ukuran cadangan 512 B untuk kasus itu.
+
+Bukti (sesudah patch): `ATI` → `QUALCOMM INCORPORATED / Model: 4108 / Revision: MPSS.JO.3.0-...`,
+`AT+CSQ` → `+CSQ: 29,99`, `AT+CIMI` → IMSI, semuanya `OK`; `AT` polos → `ERROR`.
+Perintah AT harus diakhiri **CR** (`printf 'ATI\r'`), bukan string `\r` literal.
+
+`rpmsg_tty` itu modul, jadi perbaikan bisa diuji dengan menukar
+`/lib/modules/<ver>/kernel/drivers/tty/rpmsg_tty.ko` lalu **reboot** — `rmmod` tak bisa
+karena tty yang terdaftar menahan modul.
+
 ## Yang belum
 
 - Rootfs masih di partisi **cache** (initramfs memilih ext4 berisi `/sbin/init`). Kalau Android

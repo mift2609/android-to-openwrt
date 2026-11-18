@@ -365,7 +365,7 @@ return view.extend({
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Informasi Modem dan Jaringan')),
 				E('p', { 'class': 'cbi-value-description' },
-					_('Dibaca lewat QMI (qmicli/ModemManager) — modem ini tidak melayani perintah AT.')),
+					_('Dibaca lewat QMI (qmicli/ModemManager). Port AT juga tersedia: /dev/ttyRPMSG0 dan /dev/ttyRPMSG1.')),
 				infoTable,
 				E('div', { 'class': 'cbi-value' }, [
 					E('label', { 'class': 'cbi-value-title' }, _('Auto refresh (detik)')),
