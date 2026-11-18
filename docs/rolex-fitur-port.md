@@ -17,9 +17,9 @@ Arsitektur sama dengan rolex (aarch64_generic, musl, LuCI 24.10) → paketnya bi
 
 | Fitur | Menu LuCI | Status |
 |---|---|---|
-| **Bandix** — trafik per klien (web sendiri di `:8686`) | Network → Bandix | jalan; `iface=wlan0` |
+| **Bandix** — trafik per klien (web sendiri di `:8686`) | Network → Bandix | jalan; `iface=phy0-ap0` |
 | **Internet Detector** — auto-restart koneksi kalau internet mati | Modem → Net Detector | jalan; `iface=wwan0`, `config.mode=1` |
-| **vnstat2** — statistik trafik harian/bulanan | (CLI/`vnstat`) | jalan; memantau `wwan0` + `wlan0` |
+| **vnstat2** — statistik trafik harian/bulanan | (CLI/`vnstat`) | jalan; memantau semua iface (`wwan0`, `phy0-ap0`, `usb0`) |
 | **Crontab Wizard** — jadwal tugas dari GUI | System → Scheduled Tasks | terpasang |
 | **Diskman** — partisi/mount dari GUI | System → Mount Points | terpasang (butuh `parted` ✓) |
 | **Ramfree** — bebaskan RAM | Status → Overview | terpasang |
@@ -124,11 +124,13 @@ Tiga bug berbeda, jangan tertukar:
    dan `netstat -lnup | grep :67`.
    Di **mido** hal ini tidak terjadi karena nama interface-nya memang `lan` — itulah kenapa
    "di mido jalan".
-2. **NAT tidak ada.** Kernel rolex belum punya NAT nftables (`type nat hook prerouting` ditolak)
-   sehingga `fw4` gagal start dan ruleset kosong: router sendiri bisa internet, klien tidak.
-   Sementara: `iptables-legacy` (xtables) + modul `iptable_nat` (ada di kernel) → service
-   `/etc/init.d/rolex-nat` (MASQUERADE wwan0 + FORWARD usb0/wlan0 → wwan0), dijaga watchdog.
-   Setelah kernel baru (NFT_NAT=m) fw4 bisa dipakai normal.
+2. **NAT.** Dulu kernel rolex belum punya NAT nftables (`type nat hook prerouting` ditolak),
+   `fw4` gagal start, dan sementara dipakai `iptables-legacy` lewat `/etc/init.d/rolex-nat`.
+   Sejak kernel memakai `NFT_NAT` (lihat `devices/rolex/kernel.config.fragment`),
+   `fw4 check` rc=0 dan masquerade dipasang fw4 sendiri (`srcnat_wan` + `srcnat_hotspot`).
+   MASQUERADE iptables di `rolex-nat` sudah **dibuang** supaya tidak dobel NAT; yang tersisa
+   hanya chain `ROLXSTAT` (penghitung rx/tx `wwan0`, sebab `bam-dmux` tidak mengisi statistik
+   interface), dijaga watchdog.
 3. **AdGuard Home jangan memegang :53 untuk klien.** Dengan AGH di :53, iPhone "tersambung tapi
    tanpa internet" (gejala: dapat IP, kueri DNS nyaris tidak keluar) — terbukti dengan menghentikan
    AGH dan menjalankan dnsmasq di :53: internet langsung kembali. Susunan yang benar:

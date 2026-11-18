@@ -40,7 +40,36 @@ Karena `:80` dipakai LuCI, hentikan uhttpd dulu kalau ingin menjalankannya langs
 
 ## Yang tetap ada
 
-- `panel` (`/usr/bin/panel`, sumber `tools/webpanel`) — dashboard ringan di `:8081`,
-  punya init sendiri (`/etc/init.d/panel`). Tidak disentuh.
 - `/www/index.html` tetap mengalihkan `/` ke LuCI.
 - `/data/adb/modules/bfr_webui_go` di sisi Android (Magisk) tidak disentuh.
+
+## panel (:8081) dan bfr-adapter (:8082) — juga dihapus
+
+Dua dashboard non-LuCI lain dibuang pada 2026-11-18 supaya **hanya LuCI** yang jalan:
+
+- `panel` — biner Go `tools/webpanel`, port 8081.
+- `bfr-adapter` — adaptor BFR WEBUI `tools/bfr-adapter`, port 8082 (menerjemahkan API
+  BFR ke data OpenWrt, memakai `panel.main.password`/`bfr_port` dari uci).
+
+Keduanya dijalankan manual (bukan paket opkg): biner di `/usr/bin/`, init di
+`/etc/init.d/`, symlink rc.d ditambahkan tangan, jadi sekarang symlink itu ikut dibuang
+dan file init di overlay repo (`rootfs/overlay/etc/init.d/{panel,bfr-adapter}`) dihapus.
+
+Backup: `/home/qiiin/backups/panel-bfr-2026-11-18.tar.gz` (kedua biner + init.d + keluaran
+`uci show panel`), di repo privat yang sama. Sumbernya tetap ada di `tools/webpanel` dan
+`tools/bfr-adapter`.
+
+Sisa port setelah pembersihan: `:80` uhttpd (LuCI), `:22` dropbear, `:7681` ttyd,
+`:8686` bandix, `:3000` AdGuard Home.
+
+## 404 protocol/3g.js dan protocol/modemmanager.js
+
+Halaman LuCI yang memuat model `network` (Overview, Network, System, Channel Analysis,
+Release RAM, Net Detector) mencatat dua request 404: LuCI meminta
+`protocol/<nama>.js` untuk **setiap** proto handler yang dilaporkan netifd, dan netifd
+melaporkan `3g` + `modemmanager` karena `/lib/netifd/proto/{3g,modemmanager}.sh` ada
+(paket `comgt` dan `modemmanager`), sedangkan paket JS LuCI-nya belum terpasang.
+
+Perbaikan: pasang `luci-proto-3g` dan `luci-proto-modemmanager` (keduanya ada di feed
+24.10.5, tidak menarik upgrade `luci-base`). Setelah itu `bad: []` di semua halaman.
+Keduanya sudah masuk `devices/rolex/packages.txt`.
