@@ -1,0 +1,21 @@
+config samba
+	option workgroup 'WORKGROUP'
+	option charset 'UTF-8'
+	option description 'rolex hotspot'
+	# nama jaringan netifd, bukan nama device: samba4 me-resolve lewat network_get_device.
+	# 'usb' = usb0 (192.168.42.1), 'wifi' = phy0-ap0 (192.168.43.1).
+	option interface 'usb wifi'
+	option disable_netbios '1'
+
+config sambashare
+	option name 'rolex'
+	option path '/srv/rolex'
+	option browseable 'yes'
+	option read_only 'no'
+	option create_mask '0664'
+	option dir_mask '0775'
+	option users 'rolex'
+	# semua tulisan di share dijalankan sebagai root: pemilik direktori di image
+	# rootfs bisa root (dibangun bukan sebagai root), dan ini juga yang dipakai
+	# template bawaan OpenWrt. Autentikasi tetap wajib user rolex.
+	option force_root '1'

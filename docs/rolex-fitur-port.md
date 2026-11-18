@@ -18,6 +18,7 @@ Arsitektur sama dengan rolex (aarch64_generic, musl, LuCI 24.10) → paketnya bi
 | Fitur | Menu LuCI | Status |
 |---|---|---|
 | **Bandix** — trafik per klien (web sendiri di `:8686`) | Network → Bandix | jalan; `iface=phy0-ap0` |
+| **Samba4** — share file (laptop + iPhone) | Services → Network Shares | jalan; share `rolex` → `/srv/rolex`, user `rolex`, listen `usb0`+`phy0-ap0` |
 | **Internet Detector** — auto-restart koneksi kalau internet mati | Modem → Net Detector | jalan; `iface=wwan0`, `config.mode=1` |
 | **vnstat2** — statistik trafik harian/bulanan | (CLI/`vnstat`) | jalan; memantau semua iface (`wwan0`, `phy0-ap0`, `usb0`) |
 | **Crontab Wizard** — jadwal tugas dari GUI | System → Scheduled Tasks | terpasang |

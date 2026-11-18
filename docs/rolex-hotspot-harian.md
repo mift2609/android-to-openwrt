@@ -80,6 +80,43 @@ rolex-nat, ttyd, urandom_seed.
 - Suhu setelah tuning: 48–54 °C, RAM terpakai ~160 MB dari 1.8 GB.
 - `fw4 check` → `Ruleset passes nftables check.`
 
+## Samba (share file untuk laptop + iPhone)
+
+`luci-app-samba4` + `samba4-server` + `avahi-dbus-daemon` terpasang. Menu: **Services → Network Shares**.
+
+| Setelan | Nilai |
+|---|---|
+| Share | `rolex` → `/srv/rolex` |
+| User / sandi | `rolex` / `rolex12345` (user sistem uid 1000, dibuat lewat `smbpasswd`) |
+| Interface | `usb wifi` → smbd hanya listen di `192.168.42.1:445` + `192.168.43.1:445` |
+| Protokol | SMB2_02 ke atas (bawaan Samba 4.18) — iOS/macOS tidak lagi bisa SMB1 |
+| Autostart | `S98samba4` |
+
+**Storage**: share memakai root (`/dev/mmcblk1p49`, 23.9 GB, terpakai 569 MB) — tidak ada
+partisi data terpisah. Ruang bebas 22 GB otomatis ikut ke share. Konsekuensi: isi share
+**hilang saat sysupgrade** (hanya `/etc/config` yang disimpan). Kalau butuh data tahan
+sysupgrade, backup manual (`tar` ke laptop) atau buat partisi data sendiri — itu butuh
+resize partisi secara offline (risiko tinggi, lihat catatan di bawah).
+
+**Dari laptop**
+```
+smbclient -L //192.168.42.1 -U rolex%rolex12345
+# atau mount:
+sudo mount -t cifs //192.168.42.1/rolex /mnt/rolex -o username=rolex,password=rolex12345,vers=3.0
+```
+
+**Dari iPhone**: Files → titik tiga → *Connect to Server* → `smb://192.168.43.1` →
+*Registered User* → `rolex` / `rolex12345`. Kalau di jaringan WiFi rolex, share juga
+diumumkan lewat mDNS (`/etc/avahi/services/smb.service`) sehingga muncul di *Shared*.
+
+## Catatan soal "root 4 GB"
+
+Root sekarang 23.9 GB dengan 569 MB terpakai. 4 GB memang cukup untuk sistem, **tapi
+mengecilkannya tidak memberi keuntungan**: sisa 22 GB sudah jadi ruang bebas di root yang
+sama, dan share Samba langsung memakainya. Resize partisi `userdata` (p49) harus dilakukan
+saat partisi **tidak** ter-mount (boot initramfs/recovery) sambil menulis ulang GPT berisi
+48 partisi bootloader/modem — risiko brick besar, manfaat nol. Jadi: tidak dilakukan.
+
 ## Kalau mau balik
 
 Opsi WiFi lama: `legacy_rates 1`, tanpa `max_inactivity`/`disassoc_low_ack`.

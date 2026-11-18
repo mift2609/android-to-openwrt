@@ -1,0 +1,11 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Supaya iPhone (Files > Shared) dan macOS Finder menemukan share tanpa
+     mengetik alamat: diumumkan lewat mDNS sebagai _smb._tcp port 445. -->
+<service-group>
+	<name replace-wildcards="yes">rolex hotspot (%h)</name>
+	<service>
+		<type>_smb._tcp</type>
+		<port>445</port>
+	</service>
+</service-group>
