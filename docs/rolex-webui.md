@@ -62,6 +62,33 @@ Backup: `/home/qiiin/backups/panel-bfr-2026-11-18.tar.gz` (kedua biner + init.d 
 Sisa port setelah pembersihan: `:80` uhttpd (LuCI), `:22` dropbear, `:7681` ttyd,
 `:8686` bandix, `:3000` AdGuard Home.
 
+## Menu LuCI diringkas untuk hotspot harian
+
+Menu bawaan penuh halaman yang tak dipakai saat rolex jadi hotspot portabel (Firewall/nftables,
+Routing, Processes, Channel Analysis, Realtime, System Log, Release RAM, DHCP/DNS, Diagnostics,
+Firewall config, Bandix, Net Detector, Scheduled Tasks, Mount Points, LED, Startup, Nikki,
+OpenClash, Neko, Tailscale).
+
+Yang disisakan:
+
+| Grup | Halaman |
+|---|---|
+| Status | Overview |
+| System | System, Administration (Router Password, SSH Access, HTTP(S) Access), Software, Backup / Flash Firmware, Reboot |
+| Services | AdGuard Home, Terminal |
+| Modem | Modem LTE |
+| Network | Wireless |
+
+Caranya: berkas `rootfs/overlay/usr/share/luci/menu.d/*.json` berisi versi ringkas
+(menghapus entri dari JSON = menu **dan** route-nya hilang, jadi `/admin/status/nftables`
+kini 404). Setelah mengubah menu, hapus cache: `rm -f /tmp/luci-indexcache*`.
+
+Empat menu berasal dari controller Lua, bukan JSON — `openclash`, `neko`, `release_ram`,
+`diskman` — dan disembunyikan dengan mengganti nama berkasnya menjadi
+`*.lua.disabled` (lihat langkah di `tools/rolex/build-rootfs-2410.sh`). Pulihkan dengan
+mengganti nama balik. Salinan asli semua `menu.d/*.json` ada di
+`/home/qiiin/backups/menu-d-orig/`.
+
 ## 404 protocol/3g.js dan protocol/modemmanager.js
 
 Halaman LuCI yang memuat model `network` (Overview, Network, System, Channel Analysis,
