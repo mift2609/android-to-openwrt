@@ -43,7 +43,9 @@ install -m 0755 "$ROOT/work/rolex-qmi" "$OUT/usr/bin/rolex-qmi" 2>/dev/null || t
 
 echo "[*] rc.d"
 mkdir -p "$OUT/etc/rc.d"
-for s in rolex-usb:15 rolex-wifi:94 rolex-debug:95 rolex-modem:60 dbus:19 modemmanager:61 network:20 dropbear:19 dnsmasq:19 firewall:19 uhttpd:50 rpcd:12; do
+# WiFi: netifd/wpad yang mengelola radio0 (rolex-wifi manual DINONAKTIFKAN).
+# Lihat rootfs/overlay/etc/config/wireless + patch di lib/netifd/{wireless/mac80211,hostapd}.sh.
+for s in rolex-usb:15 wpad:19 rolex-debug:95 rolex-modem:60 dbus:19 modemmanager:61 network:20 dropbear:19 dnsmasq:19 firewall:19 uhttpd:50 rpcd:12; do
   n=${s%%:*}; l=${s##*:}
   [ -f "$OUT/etc/init.d/$n" ] && ln -sf "../init.d/$n" "$OUT/etc/rc.d/S${l}$n"
 done

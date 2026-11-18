@@ -21,9 +21,11 @@ say() { echo "$(date '+%F %T') $*" >> $LOG; }
 	/etc/init.d/rolex-lte start >/dev/null 2>&1
 }
 
-iw dev wlan0 info 2>/dev/null | grep -q "type AP" || {
-	say "AP WiFi mati -> start rolex-wifi"
-	/etc/init.d/rolex-wifi start >/dev/null 2>&1
+# WiFi sekarang dikelola netifd/hostapd (radio0 -> phy0-ap0), bukan hostapd manual lagi.
+# Kalau AP hilang, bawa naik lewat netifd (dulu: menjalankan rolex-wifi manual).
+iw dev 2>/dev/null | grep -q "ssid rolex-hotspot" || {
+	say "AP WiFi mati -> wifi up"
+	/sbin/wifi up >/dev/null 2>&1
 }
 
 # NAT klien: kernel ini tanpa NFT_NAT -> fw4 gagal, jadi aturan iptables-legacy dijaga di sini

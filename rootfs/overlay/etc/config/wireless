@@ -1,9 +1,17 @@
-# AP rolex dijalankan /etc/init.d/rolex-wifi (hostapd manual).
-# Layanan `wpad` DIMATIKAN dan `wifi-scripts` tetap terpasang: tanpa hostapd global milik netifd,
-# netifd tidak bisa memegang driver mode wlan0 maupun menghapus vif kita (resep paritas mido).
-# Karena itu radio0 TIDAK perlu ditandai `disabled`.
-# Setelan di bawah dipakai skrip (SSID/sandi/channel/htmode dibaca dari sini dan diselaraskan
-# tiap menit oleh rolex-watchdog), jadi mengubahnya lewat LuCI atau `uci set` ikut terpakai.
+# AP rolex dikelola netifd/wpad (radio0 -> vif phy0-ap0, hostapd global). Skrip
+# /etc/init.d/rolex-wifi (hostapd manual) DIMATIKAN.
+#
+# Kenapa butuh patokan khusus di image ini (bukan sekadar config standar):
+#   * wcn36xx TIDAK bisa dibuatkan vif oleh hostapd ("hostapd.add_iface ...
+#     No such device"), jadi lib/netifd/wireless/mac80211.sh di-overlay:
+#     wdev membuat vif AP dulu, baru hostapd menyentuhnya.
+#   * hostapd di image ini jalan tanpa capability efektif (CapEff=0) sehingga
+#     "set interface flags: Operation not permitted"; /etc/init.d/wpad di-overlay
+#     menjalankannya sebagai root bila penanda /etc/rolex-wpad-root ada.
+#   * `qos_map_set` dan `vlan_naming/vlan_file` ditolak driver/hostapd ini;
+#     lib/netifd/hostapd.sh di-overlay melewatkannya bila /etc/rolex-hostapd-no-vlan ada.
+# `option ifname` sengaja TIDAK di-set supaya netifd memakai nama bawaan phy0-ap0.
+# Setelan di bawah dipakai penuh oleh netifd, jadi mengubahnya lewat LuCI ikut terpakai.
 package wireless
 
 config wifi-device 'radio0'
@@ -24,5 +32,4 @@ config wifi-iface 'wifinet0'
 	option ssid 'rolex-hotspot'
 	option encryption 'psk2'
 	option key 'rolex12345'
-	option ifname 'wlan0'
 	option macaddr '12:00:00:00:00:0a'

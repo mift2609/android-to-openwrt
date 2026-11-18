@@ -2,12 +2,13 @@
 # Mulai SEBELUM network (20) seperti mido-wifi: AP dibuat lebih dulu, sehingga netifd melihat phy
 # sudah naik dan menandai radio0 "up" (bukan "down").
 START=17
-# rolex WiFi AP — hostapd manual dari konfigurasi yang bisa diedit LuCI.
-# Kenapa hostapd manual, bukan netifd/wpad: di driver wcn36xx rolex, netifd/wpad gagal membuat
-# vif AP ("hostapd.add_iface failed for phy phy0 ... No such device (-19)"). Layanan `wpad`
-# karena itu DIMATIKAN (tanpa hostapd global, netifd tidak bisa memegang driver mode wlan0),
-# dan AP dijalankan skrip ini. netifd tetap dipakai untuk L3: interface 'wifi' (device wlan0,
-# static 192.168.43.1) memberi IP, dnsmasq melayani DHCP.
+# rolex WiFi AP — CADANGAN. Sejak 18 Nov 2026 WiFi dikelola netifd/wpad (radio0 ->
+# phy0-ap0) dan skrip ini DINONAKTIFKAN (lihat rootfs/overlay/etc/config/wireless).
+# Simpan untuk fallback/uji manual bila jalur netifd bermasalah.
+# Kenapa dulu hostapd manual: di driver wcn36xx rolex, netifd/wpad gagal membuat
+# vif AP ("hostapd.add_iface failed for phy phy0 ... No such device (-19)"). Kini
+# diperbaiki dengan patch lib/netifd/wireless/mac80211.sh (wdev membuat vif dulu) +
+# hostapd dijalankan root (/etc/rolex-wpad-root) + hostapd.sh tanpa qos_map/vlan.
 #
 # Urutan memuat modul (TERBUKTI di rolex, 13 Nov 2026).
 # PELAJARAN 1: `insmod` TIDAK menarik dependensi; daftar harus lengkap & berurutan.
