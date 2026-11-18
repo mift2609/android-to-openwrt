@@ -48,8 +48,10 @@ Uji: `nslookup -type=A ads.doubleclick.net 192.168.43.1` → `0.0.0.0` (diblokir
   diakses dari LAN).
 - Zona `wan` diperketat: `input DROP`, `forward DROP`, `masq 1`. Bukti:
   `nft list chain inet fw4 drop_from_wan` → `iifname "wwan0" ... drop`.
-- Hanya satu forwarding: `hotspot → wan`. Tidak ada NAT dobel (`rolex-nat` tinggal
-  penghitung `ROLXSTAT`).
+- Hanya satu forwarding: `hotspot → wan`. Tidak ada NAT dobel.
+- Penghitung rx/tx `wwan0` memakai tabel nft `netdev rolex_stat` (hook ingress/egress device
+  `wwan0`), bukan iptables. Ini yang menghilangkan banner **"Legacy rules detected"** di
+  Status > Firewall — banner itu muncul karena `iptables-save` masih memuat baris `-A`.
 
 ## CPU / jaringan (`/etc/rc.local`)
 

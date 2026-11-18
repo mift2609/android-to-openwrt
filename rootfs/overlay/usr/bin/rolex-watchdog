@@ -28,10 +28,9 @@ iw dev 2>/dev/null | grep -q "ssid rolex-hotspot" || {
 	/sbin/wifi up >/dev/null 2>&1
 }
 
-# Penghitung trafik wwan0 (chain ROLXSTAT) dijaga di sini. NAT sendiri urusan fw4.
+# Penghitung trafik wwan0 (tabel nft netdev rolex_stat) dijaga di sini. NAT sendiri urusan fw4.
 if [ -x /etc/init.d/rolex-nat ]; then
-	if [ -x /usr/sbin/iptables ]; then I=/usr/sbin/iptables; else I=/usr/sbin/iptables-legacy; fi
-	$I -n -L ROLXSTAT >/dev/null 2>&1 || {
+	nft list table netdev rolex_stat >/dev/null 2>&1 || {
 		say "penghitung trafik wwan0 hilang -> dipasang ulang"
 		/etc/init.d/rolex-nat start >/dev/null 2>&1
 	}

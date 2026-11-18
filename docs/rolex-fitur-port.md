@@ -128,9 +128,11 @@ Tiga bug berbeda, jangan tertukar:
    `fw4` gagal start, dan sementara dipakai `iptables-legacy` lewat `/etc/init.d/rolex-nat`.
    Sejak kernel memakai `NFT_NAT` (lihat `devices/rolex/kernel.config.fragment`),
    `fw4 check` rc=0 dan masquerade dipasang fw4 sendiri (`srcnat_wan` + `srcnat_hotspot`).
-   MASQUERADE iptables di `rolex-nat` sudah **dibuang** supaya tidak dobel NAT; yang tersisa
-   hanya chain `ROLXSTAT` (penghitung rx/tx `wwan0`, sebab `bam-dmux` tidak mengisi statistik
-   interface), dijaga watchdog.
+   MASQUERADE iptables di `rolex-nat` sudah **dibuang** supaya tidak dobel NAT. Penghitung rx/tx
+   `wwan0` (sebab `bam-dmux` tidak mengisi statistik interface) kini memakai tabel nftables
+   `netdev rolex_stat` (hook ingress/egress device `wwan0`), bukan chain iptables `ROLXSTAT` —
+   sebab setiap aturan iptables membuat LuCI menampilkan peringatan "Legacy rules detected" di
+   Status > Firewall. Dijaga watchdog.
 3. **AdGuard Home jangan memegang :53 untuk klien.** Dengan AGH di :53, iPhone "tersambung tapi
    tanpa internet" (gejala: dapat IP, kueri DNS nyaris tidak keluar) — terbukti dengan menghentikan
    AGH dan menjalankan dnsmasq di :53: internet langsung kembali. Susunan yang benar:

@@ -1,55 +1,61 @@
 #!/bin/sh /etc/rc.common
-# rolex-nat — penghitung trafik wwan0 (chain ROLXSTAT) untuk halaman Modem LTE.
+# rolex-nat — penghitung trafik wwan0 untuk halaman Modem LTE.
 #
-# Dulu skrip ini juga memasang MASQUERADE lewat iptables-legacy, karena kernel
-# belum punya NFT_NAT sehingga fw4 gagal start. Sejak kernel memakai NFT_NAT
-# (fw4 check rc=0), masquerade ditangani fw4 (chain srcnat_wan/srcnat_hotspot).
-# MASQUERADE di sini DIBUANG supaya tidak dobel NAT.
+# Dulu skrip ini memasang MASQUERADE lewat iptables-legacy (kernel belum punya
+# NFT_NAT). Sejak kernel memakai NFT_NAT, NAT ditangani fw4; MASQUERADE di sini
+# dibuang supaya tidak dobel. Sisa satu tugas: menghitung rx/tx wwan0, sebab
+# driver bam-dmux tidak mengisi /sys/class/net/wwan0/statistics.
 #
-# Yang tersisa: chain ROLXSTAT. Driver bam-dmux tidak mengisi
-# /sys/class/net/wwan0/statistics maupun /proc/net/dev (semuanya 0), jadi rx/tx
-# dihitung lewat aturan RETURN di chain itu dan dibaca rolex-3ginfo-json.
+# Sebelumnya penghitung dibuat dengan chain iptables ROLXSTAT. Itu membuat LuCI
+# menampilkan peringatan "Legacy rules detected" di halaman Status > Firewall
+# (setiap `-A` di iptables-save memicunya). Sekarang dipakai tabel nftables
+# family netdev (hook ingress/egress pada device wwan0), jadi tidak ada aturan
+# iptables sama sekali. Hook netdev terpisah dari fw4 (inet), jadi tidak
+# mengubah filtering.
 
 START=99
 STOP=10
 
+TBL=rolex_stat
+
 log() { logger -t rolex-nat "$*"; }
 
-ipt() {
-	for c in /usr/sbin/iptables /usr/sbin/iptables-legacy; do
-		[ -x "$c" ] && { echo "$c"; return 0; }
-	done
-	return 1
-}
-
 start() {
-	# hanya filter table yang dipakai (chain ROLXSTAT di FORWARD/INPUT/OUTPUT)
-	K=/lib/modules/$(uname -r)
-	lsmod | grep -q "^iptable_filter " || {
-		f=$(find "$K" -name "iptable_filter.ko" 2>/dev/null | head -1)
-		[ -n "$f" ] && insmod "$f" 2>/dev/null
-	}
+	command -v nft >/dev/null 2>&1 || { log "nft tak tersedia — penghitung dilewati"; return 1; }
 
-	I=$(ipt) || { log "iptables tak tersedia — ROLXSTAT dilewati"; return 1; }
-	echo 1 > /proc/sys/net/ipv4/ip_forward
-	$I -N ROLXSTAT 2>/dev/null
-	$I -F ROLXSTAT 2>/dev/null
-	$I -A ROLXSTAT -i wwan0 -j RETURN   # baris ini menghitung RX (in = wwan0)
-	$I -A ROLXSTAT -o wwan0 -j RETURN   # baris ini menghitung TX (out = wwan0)
-	for h in FORWARD INPUT OUTPUT; do
-		$I -C $h -j ROLXSTAT 2>/dev/null || $I -I $h 1 -j ROLXSTAT
+	# bersihkan sisa zaman iptables supaya LuCI tidak lagi memunculkan
+	# "Legacy rules detected" (cek lama: iptables-save berisi baris -A)
+	for I in /usr/sbin/iptables-legacy /usr/sbin/iptables; do
+		[ -x "$I" ] || continue
+		$I -F ROLXSTAT 2>/dev/null
+		for h in INPUT FORWARD OUTPUT; do
+			$I -D $h -j ROLXSTAT 2>/dev/null
+		done
+		$I -X ROLXSTAT 2>/dev/null
 	done
-	log "penghitung trafik wwan0 aktif (chain ROLXSTAT); NAT ditangani fw4"
+
+	nft delete table netdev $TBL 2>/dev/null
+	nft -f - <<-EOF || { log "gagal memasang tabel nft $TBL"; return 1; }
+		table netdev $TBL {
+			chain rx {
+				type filter hook ingress device "wwan0" priority filter; policy accept;
+				counter comment "rx"
+			}
+			chain tx {
+				type filter hook egress device "wwan0" priority filter; policy accept;
+				counter comment "tx"
+			}
+		}
+	EOF
+	log "penghitung trafik wwan0 aktif (nft netdev $TBL); NAT ditangani fw4"
 }
 
 stop() {
-	I=$(ipt) || return 0
-	$I -F ROLXSTAT 2>/dev/null
+	nft delete table netdev $TBL 2>/dev/null
 	log "penghitung trafik wwan0 dimatikan"
 }
 
-# true kalau chain ROLXSTAT sudah terpasang (dipakai rolex-watchdog)
+# dipakai rolex-watchdog
 status_quiet() {
-	I=$(ipt) || return 1
-	$I -n -L ROLXSTAT >/dev/null 2>&1
+	nft list table netdev $TBL >/dev/null 2>&1
 }
