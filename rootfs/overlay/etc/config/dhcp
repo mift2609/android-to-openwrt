@@ -21,7 +21,10 @@ config dnsmasq
 	# dicoba dan membuat klien WiFi "tersambung tapi tanpa internet" (iPhone iOS).
 	option noresolv '1'
 	option port '53'
+	# Utama: AdGuard Home lokal (penyaring iklan). Cadangan publik supaya internet
+	# tetap hidup kalau AGH mati; kalau AGH hidup, jalur utama yang dipakai.
 	list server '127.0.0.1#5353'
+	list server '94.140.14.14'
 	# Interface 'wifi' tidak dikelola netifd (IP dipasang rolex-wifi-ctl), sehingga seksi
 	# dhcp di bawah tidak cukup: rentang DHCP untuk klien WiFi diletakkan di
 	# /etc/dnsmasq.d/rolex-wifi.conf. Tanpa confdir ini, klien WiFi tidak dapat IP.
