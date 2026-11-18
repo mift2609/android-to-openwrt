@@ -1,14 +1,14 @@
 #!/bin/sh /etc/rc.common
-# rolex-nat — NAT (masquerade) untuk klien LAN/WiFi.
+# rolex-nat — penghitung trafik wwan0 (chain ROLXSTAT) untuk halaman Modem LTE.
 #
-# Kenapa perlu skrip sendiri: kernel rolex saat ini TIDAK punya NAT nftables
-# (`type nat hook prerouting` ditolak -> fw4 gagal start, ruleset kosong), sehingga
-# klien tak bisa internet walau router sendiri bisa. Modul xtables legacy
-# (iptable_nat + NF_NAT_MASQUERADE) ADA, jadi NAT dipasang lewat iptables-legacy.
+# Dulu skrip ini juga memasang MASQUERADE lewat iptables-legacy, karena kernel
+# belum punya NFT_NAT sehingga fw4 gagal start. Sejak kernel memakai NFT_NAT
+# (fw4 check rc=0), masquerade ditangani fw4 (chain srcnat_wan/srcnat_hotspot).
+# MASQUERADE di sini DIBUANG supaya tidak dobel NAT.
 #
-# Kalau nanti kernel sudah dibangun dengan NFT_NAT (lihat devices/rolex/kernel.config.fragment),
-# firewall4 bisa dipakai normal dan skrip ini tak lagi wajib — tapi tetap aman dijalankan
-# karena hanya menambah/menjaga satu aturan MASQUERADE.
+# Yang tersisa: chain ROLXSTAT. Driver bam-dmux tidak mengisi
+# /sys/class/net/wwan0/statistics maupun /proc/net/dev (semuanya 0), jadi rx/tx
+# dihitung lewat aturan RETURN di chain itu dan dibaca rolex-3ginfo-json.
 
 START=99
 STOP=10
@@ -23,30 +23,15 @@ ipt() {
 }
 
 start() {
+	# hanya filter table yang dipakai (chain ROLXSTAT di FORWARD/INPUT/OUTPUT)
 	K=/lib/modules/$(uname -r)
-	for m in iptable_nat iptable_filter iptable_mangle; do
-		lsmod | grep -q "^$m " && continue
-		f=$(find "$K" -name "$m.ko" 2>/dev/null | head -1)
+	lsmod | grep -q "^iptable_filter " || {
+		f=$(find "$K" -name "iptable_filter.ko" 2>/dev/null | head -1)
 		[ -n "$f" ] && insmod "$f" 2>/dev/null
-	done
+	}
 
-	# tunggu wwan0 (LTE) muncul — maks ~60 s
-	i=0
-	while [ $i -lt 12 ]; do
-		ip link show wwan0 >/dev/null 2>&1 && break
-		sleep 5
-		i=$((i + 1))
-	done
-	ip link show wwan0 >/dev/null 2>&1 || log "wwan0 belum ada — NAT dipasang tetap (berbasis nama interface)"
-
-	I=$(ipt) || { log "iptables tak tersedia — NAT dilewati"; return 1; }
+	I=$(ipt) || { log "iptables tak tersedia — ROLXSTAT dilewati"; return 1; }
 	echo 1 > /proc/sys/net/ipv4/ip_forward
-	$I -t nat -C POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null || $I -t nat -A POSTROUTING -o wwan0 -j MASQUERADE
-	for ifc in usb0 wlan0; do
-		$I -C FORWARD -i "$ifc" -o wwan0 -j ACCEPT 2>/dev/null || $I -A FORWARD -i "$ifc" -o wwan0 -j ACCEPT
-	done
-	# Chain penghitung trafik wwan0 (driver bam-dmux tidak mengisi /sys/class/net/wwan0/statistics
-	# dan /proc/net/dev -- semuanya 0). Dipakai halaman LuCI "4G Connection" untuk rx/tx.
 	$I -N ROLXSTAT 2>/dev/null
 	$I -F ROLXSTAT 2>/dev/null
 	$I -A ROLXSTAT -i wwan0 -j RETURN   # baris ini menghitung RX (in = wwan0)
@@ -54,17 +39,17 @@ start() {
 	for h in FORWARD INPUT OUTPUT; do
 		$I -C $h -j ROLXSTAT 2>/dev/null || $I -I $h 1 -j ROLXSTAT
 	done
-	log "NAT klien aktif: MASQUERADE wwan0 + FORWARD usb0/wlan0 -> wwan0 (+chain ROLXSTAT)"
+	log "penghitung trafik wwan0 aktif (chain ROLXSTAT); NAT ditangani fw4"
 }
 
 stop() {
 	I=$(ipt) || return 0
-	$I -t nat -D POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null
-	log "NAT klien dimatikan"
+	$I -F ROLXSTAT 2>/dev/null
+	log "penghitung trafik wwan0 dimatikan"
 }
 
-# true kalau aturan inti sudah ada (dipakai rolex-watchdog)
+# true kalau chain ROLXSTAT sudah terpasang (dipakai rolex-watchdog)
 status_quiet() {
 	I=$(ipt) || return 1
-	$I -t nat -C POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null
+	$I -n -L ROLXSTAT >/dev/null 2>&1
 }

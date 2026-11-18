@@ -28,11 +28,11 @@ iw dev 2>/dev/null | grep -q "ssid rolex-hotspot" || {
 	/sbin/wifi up >/dev/null 2>&1
 }
 
-# NAT klien: kernel ini tanpa NFT_NAT -> fw4 gagal, jadi aturan iptables-legacy dijaga di sini
+# Penghitung trafik wwan0 (chain ROLXSTAT) dijaga di sini. NAT sendiri urusan fw4.
 if [ -x /etc/init.d/rolex-nat ]; then
 	if [ -x /usr/sbin/iptables ]; then I=/usr/sbin/iptables; else I=/usr/sbin/iptables-legacy; fi
-	$I -t nat -C POSTROUTING -o wwan0 -j MASQUERADE 2>/dev/null || {
-		say "aturan NAT klien hilang -> dipasang ulang"
+	$I -n -L ROLXSTAT >/dev/null 2>&1 || {
+		say "penghitung trafik wwan0 hilang -> dipasang ulang"
 		/etc/init.d/rolex-nat start >/dev/null 2>&1
 	}
 fi
