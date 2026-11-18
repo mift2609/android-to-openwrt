@@ -1,0 +1,70 @@
+From: rolex bring-up <rolex@local>
+Subject: [PATCH 4/4] tty: rpmsg_tty: jangan gagal kalau transport tanpa get_mtu
+
+rpmsg_tty memakai rpmsg_get_mtu() di write() dan write_room(). Kalau
+transport rpmsg tidak mengisi ops->get_mtu (qcom_smd di MSM8917/MDM9607 tidak),
+rpmsg_get_mtu() mengembalikan -ENOTSUPP (-524), sehingga setiap tulis ke
+/dev/ttyRPMSGx gagal sebelum byte apa pun sampai ke modem.
+
+Pakai ukuran cadangan untuk kasus itu. Panjang sebenarnya tetap divalidasi
+oleh transport (__qcom_smd_send menolak paket >= fifo_size).
+--- a/drivers/tty/rpmsg_tty.c
++++ b/drivers/tty/rpmsg_tty.c
+@@ -15,12 +15,16 @@
+ #include <linux/module.h>
+ #include <linux/rpmsg.h>
+ #include <linux/slab.h>
++#include <linux/errno.h>
+ #include <linux/tty.h>
+ #include <linux/tty_flip.h>
+ 
+ #define RPMSG_TTY_NAME	"ttyRPMSG"
+ #define MAX_TTY_RPMSG	32
+ 
++/* Dipakai kalau transport tidak mengisi ops->get_mtu (mis. qcom_smd) */
++#define RPMSG_TTY_FALLBACK_MTU	512
++
+ static DEFINE_IDR(tty_idr);	/* tty instance id */
+ static DEFINE_MUTEX(idr_lock);	/* protects tty_idr */
+ 
+@@ -32,6 +36,22 @@
+ 	struct rpmsg_device	*rpdev;	 /* rpmsg device */
+ };
+ 
++static int rpmsg_tty_get_mtu(struct rpmsg_device *rpdev)
++{
++	int mtu = rpmsg_get_mtu(rpdev->ept);
++
++	/*
++	 * Beberapa transport (qcom_smd di MSM8917/MDM9607) belum mengisi
++	 * ops->get_mtu, sehingga rpmsg_get_mtu() mengembalikan -ENOTSUPP dan
++	 * setiap tulis ke /dev/ttyRPMSGx gagal sebelum byte dikirim. Pakai
++	 * ukuran cadangan; transport tetap memvalidasi panjang sebenarnya.
++	 */
++	if (mtu == -ENOTSUPP)
++		mtu = RPMSG_TTY_FALLBACK_MTU;
++
++	return mtu;
++}
++
+ static int rpmsg_tty_cb(struct rpmsg_device *rpdev, void *data, int len, void *priv, u32 src)
+ {
+ 	struct rpmsg_tty_port *cport = dev_get_drvdata(&rpdev->dev);
+@@ -83,7 +103,7 @@
+ 
+ 	rpdev = cport->rpdev;
+ 
+-	msg_max_size = rpmsg_get_mtu(rpdev->ept);
++	msg_max_size = rpmsg_tty_get_mtu(rpdev);
+ 	if (msg_max_size < 0)
+ 		return msg_max_size;
+ 
+@@ -107,7 +127,7 @@
+ 	struct rpmsg_tty_port *cport = tty->driver_data;
+ 	int size;
+ 
+-	size = rpmsg_get_mtu(cport->rpdev->ept);
++	size = rpmsg_tty_get_mtu(cport->rpdev);
+ 	if (size < 0)
+ 		return 0;
+ 
