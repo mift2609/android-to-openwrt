@@ -122,3 +122,18 @@ saat partisi **tidak** ter-mount (boot initramfs/recovery) sambil menulis ulang 
 Opsi WiFi lama: `legacy_rates 1`, tanpa `max_inactivity`/`disassoc_low_ack`.
 `firewall`: zona `wan` `input REJECT`/`forward REJECT`. `internet-detector`:
 `interval_up 2`, `interval_down 10`. `rc.local`: kosongkan isinya.
+## Akses SMB dari luar rumah (belum diaktifkan)
+
+SMB hanya di LAN (`smbd` bind `192.168.42.1:445` + `192.168.43.1:445`, WAN `input DROP`).
+Kalau nanti butuh buka file dari jauh:
+
+1. `tailscale` sudah terpasang di rolex, tapi **logout** dan autostart dimatikan saat tuning.
+   `service tailscale enable && service tailscale start && tailscale up` → buka URL auth
+   sekali dari HP, sesudah itu node masuk tailnet (LTE tetap bisa walau CGNAT, lewat DERP).
+2. Samba masih bind ke device LAN saja. Ubah `/etc/samba/smb.conf.template`
+   `bind interfaces only = yes` → `no` lalu `service samba4 restart`, supaya ikut listen
+   di `tailscale0`. WAN tetap tertutup oleh firewall (`nft list chain inet fw4 drop_from_wan`),
+   jadi ini tidak membuka SMB ke internet.
+3. Akses: `smb://<ip-tailscale-rolex>` dengan user `rolex`.
+
+Alternatif tanpa VPN: tarik file ke laptop lewat SSH (`scp`) saat sedang sejaringan.
