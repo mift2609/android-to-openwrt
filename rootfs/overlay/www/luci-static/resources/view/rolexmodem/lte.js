@@ -92,24 +92,28 @@ function smsAct(args) {
 	});
 }
 
-// Bar sinyal sederhana (persen dari QMI) — halaman ala "4G Connection".
+// Bar sinyal: pakai komponen bawaan tema (.cbi-progressbar) supaya warna/tebal ikut tema qiiin.
+// Hanya warna teks persen yang dipilih dari variabel kekuatan milik tema (bukan warna hardcode).
 function signalBar(pct) {
 	var p = parseInt(pct, 10);
 	if (isNaN(p)) return '\u2014';
-	var col = p > 60 ? '#2e7d32' : (p > 35 ? '#f9a825' : '#c62828');
-	return E('span', {}, [
-		E('span', {
-			'style': 'display:inline-block; vertical-align:middle; width:110px; height:10px; ' +
-			         'background:#d8d8d8; border-radius:5px; overflow:hidden; margin-right:8px'
-		}, E('span', {
-			'style': 'display:block; height:100%; width:' + Math.max(3, Math.min(100, p)) + '%; background:' + col
-		})),
-		E('strong', {}, p + '%')
+	var v = p > 60 ? '--strength-strong-text' : (p > 35 ? '--strength-medium-text' : '--strength-weak-text');
+	return E('span', { 'style': 'display:inline-flex; align-items:center; gap:8px; min-width:130px' }, [
+		E('div', { 'class': 'cbi-progressbar', 'style': 'flex:1 1 auto; max-width:120px' },
+			E('div', { 'style': 'width:' + Math.max(3, Math.min(100, p)) + '%' })),
+		E('strong', { 'style': 'color:var(' + v + ')' }, p + '%')
 	]);
 }
 
 function val(x) {
 	return (x === undefined || x === null || x === '') ? '\u2014' : x;
+}
+
+// Versi firmware modem panjang (mis. "MPSS.JO.3.0-00369-8937_GENNS_PACK-2.149578.1.184164.1 1 [...]");
+// ambil satu token saja lalu potong supaya baris tabel tak jadi 4 baris.
+function fwShort(fw) {
+	var t = String(fw).split(/\s+/)[0] || '';
+	return t.length > 26 ? t.slice(0, 24) + '\u2026' : t;
 }
 
 return view.extend({
@@ -119,8 +123,7 @@ return view.extend({
 		return Promise.all([
 			ctl(['status']),
 			fs.exec('/usr/bin/rolex-3ginfo-json', []),
-			fs.exec('/usr/bin/rolex-sms-ctl', [ 'list' ]).catch(function () { return { stdout: '' }; }),
-			fs.exec('/usr/bin/rolex-wifi-ctl', [ 'status' ]).catch(function () { return { stdout: '' }; })
+			fs.exec('/usr/bin/rolex-sms-ctl', [ 'list' ]).catch(function () { return { stdout: '' }; })
 		]);
 	},
 
@@ -134,12 +137,11 @@ return view.extend({
 			var m = /^id=(\d+)\s+state=(\S+)/.exec(l.trim());
 			return m ? { id: m[1], state: m[2] } : null;
 		}).filter(function (x) { return x; });
-		var wifi = kv((res && res[3] && res[3].stdout) || '');
 		var bandsCur = bandsFrom(block, 'current');
 		var bandsSup = bandsFrom(block, 'supported');
 
-		function signalQuality(dd) {
-			var rsrp = parseFloat(dd.RSRP);
+		function signalQuality(gg) {
+			var rsrp = parseFloat(gg.rsrp);
 			if (isNaN(rsrp)) return '\u2014';
 			if (rsrp > -80) return _('sangat baik');
 			if (rsrp > -90) return _('baik');
@@ -151,40 +153,31 @@ return view.extend({
 		// Baris tabel "Informasi Modem dan Jaringan" — dipakai saat render awal maupun saat
 		// auto refresh (hanya tabel ini yang dibangun ulang, jadi isian lain tak terganggu).
 		function mm(v) { return v ? v + ' dBm' : '\u2014'; }
-		function rowsFrom(dd, gg, cur, sup) {
+		function rowsFrom(dd, gg, cur) {
 			var rows = [
 				row(_('Kekuatan sinyal'), signalBar(gg.signal)),
 				row(_('Operator'), val(gg.operator_name) + (gg.operator_mcc ? ' (' + gg.operator_mcc + '/' + gg.operator_mnc + ')' : '')),
 				row(_('Status SIM'), gg.imsi ? _('siap (IMSI terbaca)') : '\u2014'),
 				row(_('Teknologi / registrasi'), val(gg.mode) + ' / ' + val(gg.registration)),
-				row(_('Layanan LTE / PS'), val(dd.lte_service) + ' / ' + val(dd.ps)),
 				row(_('APN'), E('strong', {}, dd.apn || '\u2014')),
 				row(_('IP / gateway'), val(dd.ip) + (dd.gateway ? ' (gw ' + dd.gateway + ')' : '')),
-				row(_('IP modem / internet'), val(dd.io)),
 				row(_('Sinyal'), _('RSRP ') + mm(gg.rsrp) + ' / ' + _('RSRQ ') + (val(gg.rsrq) === '\u2014' ? '\u2014' : gg.rsrq + ' dB') +
 					' / ' + _('SINR ') + (val(gg.sinr) === '\u2014' ? '\u2014' : gg.sinr + ' dB') +
-					(dd.RSRP ? '  (' + signalQuality(dd) + ')' : '')),
-				row(_('RSSI / CSQ'), (val(gg.rssi) === '\u2014' ? '\u2014' : gg.rssi + ' dBm') + ' / ' + val(gg.csq)),
+					(gg.rsrp ? '  (' + signalQuality(gg) + ')' : '')),
 				row(_('Pita / PCI / EARFCN'), val(gg.pband) + '  \u2014 PCI ' + val(gg.pci) + ', EARFCN ' + val(gg.earfcn), 'important'),
-				row(_('PCI tetangga'), val(gg.neighbors) + (gg.neighbors && gg.neighbors !== '\u2014' ? '  ' + _('(sel layan = baris pertama)') : '')),
 				row(_('Cell ID / TAC / LAC'), val(gg.cid_dec) + (gg.cid_hex ? ' (' + gg.cid_hex + ')' : '') + ' / ' + val(gg.tac_dec) + ' / ' + val(gg.lac_dec)),
 				row(_('Statistik koneksi'), val(gg.conn_time) + (gg.rx ? '  \u2014 rx ' + gg.rx + ' / tx ' + gg.tx : '')),
-				row(_('Tipe modem'), val(gg.modem)),
-				row(_('Firmware'), val(gg.firmware)),
 				row(_('IMEI / IMSI'), val(gg.imei) + ' / ' + val(gg.imsi)),
-				row(_('ICCID'), val(gg.iccid)),
-				row(_('Suhu modem'), gg.mtemp ? gg.mtemp + ' \u00b0C' : '\u2014'),
-				row(_('ModemManager'), val(dd.mm_state)),
-				row(_('Band prefs sekarang'), splitBands(cur).map(bandLabel).join(', ') || '\u2014'),
-				row(_('Band didukung'), splitBands(sup).map(bandLabel).join(', ') || '\u2014')
+				row(_('Modem'), val(gg.modem) + (gg.firmware ? '  \u2014 ' + fwShort(gg.firmware) : '')),
+				row(_('Suhu'), gg.mtemp ? gg.mtemp + ' \u00b0C' : '\u2014'),
+				row(_('Band aktif'), splitBands(cur).map(bandLabel).join(', ') || '\u2014')
 			];
-			if (!dd.RSRP && !dd.RSSI && !gg.rsrp) {
+			if (!gg.rsrp && !gg.rssi && !gg.signal) {
 				rows.unshift(E('tr', { 'class': 'tr' }, [
 					E('td', { 'class': 'td left', 'colspan': '2' }, [
 						E('strong', {}, _('Modem belum siap: nilai sinyal belum bisa dibaca.')),
 						E('br'),
-						_('Biasanya 1–2 menit setelah boot (mencari jaringan). Tunggu lalu tekan Segarkan, ' +
-						  'atau jalankan /usr/bin/rolex-watchdog di System → Terminal.')
+						_('Biasanya 1–2 menit setelah boot (mencari jaringan). Tunggu lalu tekan Segarkan.')
 					])
 				]));
 			}
@@ -226,9 +219,7 @@ return view.extend({
 			var m = /^eutran-(\d+)$/.exec(tok);
 			var cb = E('input', { 'type': 'checkbox', 'data-band': tok, 'checked': (cur || '').indexOf(tok) >= 0 ? '' : null });
 			boxes.push(cb);
-			return E('label', {
-				'style': 'display:inline-block; min-width:170px; margin:2px 10px 2px 0; font-weight:normal'
-			}, [ cb, ' ', m ? lteLabel(m[1]) : bandLabel(tok) ]);
+			return E('label', { 'class': 'cbi-checkbox', 'style': 'white-space:nowrap' }, [ cb, ' ', m ? lteLabel(m[1]) : bandLabel(tok) ]);
 		}
 		var curList = splitBands(bandsCur);
 		var lteTok = splitBands(bandsSup).filter(function (t) { return /^eutran-\d+$/.test(t); })
@@ -294,11 +285,10 @@ return view.extend({
 						_('Centang band yang diinginkan — tak perlu hafal kode "eutran-3". ') +
 						_('★ = band yang dipakai operator Indonesia (Telkomsel/Indosat/XL/Tri/Smartfren). ') +
 						_('Biarkan 2G/3G tercentang sebagai cadangan kalau 4G hilang.')),
-					E('br'),
-					E('div', { 'style': 'font-weight:600; margin-top:6px' }, _('LTE (4G)')),
-					E('div', {}, lteBoxes),
-					E('div', { 'style': 'font-weight:600; margin-top:6px' }, _('2G / 3G (cadangan)')),
-					E('div', {}, otherBoxes),
+					E('h4', {}, _('LTE (4G)')),
+					E('div', { 'style': 'display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:2px 10px' }, lteBoxes),
+					E('h4', {}, _('2G / 3G (cadangan)')),
+					E('div', { 'style': 'display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:2px 10px' }, otherBoxes),
 					E('br'),
 					E('button', {
 						'class': 'btn cbi-button cbi-button-apply',
@@ -357,11 +347,10 @@ return view.extend({
 		}
 		var smsNum = E('input', { 'class': 'cbi-input-text', 'placeholder': '+62812xxxxxxx' });
 		var smsTxt = E('input', { 'class': 'cbi-input-text', 'placeholder': _('Isi SMS') });
-		var smsRows = sms.map(function (m) {
+		var smsRows = sms.slice(0, 10).map(function (m) {
 			return E('tr', { 'class': 'tr' }, [
-				E('td', { 'class': 'td left' }, m.id),
-				E('td', { 'class': 'td left' }, m.state),
-				E('td', { 'class': 'td left' }, [
+				E('td', { 'class': 'td left' }, m.id + ' \u00b7 ' + m.state),
+				E('td', { 'class': 'td left', 'style': 'white-space:nowrap' }, [
 					E('button', { 'class': 'btn cbi-button', 'click': function () { bacaSms(m.id); } }, _('Baca')),
 					' ',
 					E('button', { 'class': 'btn cbi-button cbi-button-reset', 'click': function () { hapusSms(m.id); } }, _('Hapus'))
@@ -369,7 +358,7 @@ return view.extend({
 			]);
 		});
 		if (!smsRows.length)
-			smsRows = [ E('tr', { 'class': 'tr' }, E('td', { 'class': 'td left', 'colspan': '3' }, _('Tidak ada SMS.'))) ];
+			smsRows = [ E('tr', { 'class': 'tr' }, E('td', { 'class': 'td left', 'colspan': '2' }, _('Tidak ada SMS.'))) ];
 
 		// --- isi tiap tab ------------------------------------------------------
 		var modemSection = E('div', {}, [
@@ -394,11 +383,20 @@ return view.extend({
 							_('0 = mati. Hanya tabel ini yang diperbarui otomatis (isian APN/band Anda tidak terganggu).'))
 					])
 				])
-			]),
+			])
+		]);
+
+		// Pengaturan radio (APN, IP family, lock band, restart modem) — tab sendiri supaya
+		// tab Modem tetap ringkas.
+		var setSection = E('div', {}, [
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Pengaturan')),
 				controls
-			]),
+			])
+		]);
+
+		// Penjaga internet — tab sendiri (jarang diubah, dulu menumpuk di tab Modem).
+		var guardSection = E('div', {}, [
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Penjaga internet (auto ganti IP)')),
 				E('p', { 'class': 'cbi-value-description' },
@@ -446,25 +444,6 @@ return view.extend({
 				' ',
 				E('span', { 'class': 'cbi-value-description' },
 					_('Target ping diubah lewat uci rolexlte.main.ping_target (kosong = 8.8.8.8).'))
-			]),
-			E('div', { 'class': 'cbi-section' }, [
-				E('h3', {}, _('WiFi (AP rolex)')),
-				E('table', { 'class': 'table' }, [
-					row(_('Status AP'), wifi.ap_state === 'jalan' ? _('jalan') : val(wifi.ap_state)),
-					row(_('SSID'), E('strong', {}, val(wifi.ssid))),
-					row(_('Sandinya'), wifi.key ? _('disimpan (lihat rolex-wifi-ctl status)') : _('terbuka')),
-					row(_('Channel'), val(wifi.channel)),
-					row(_('IP router WiFi'), val(wifi.ip)),
-					row(_('Klien terhubung'), val(wifi.clients))
-				]),
-				E('p', { 'class': 'cbi-value-description' },
-					_('AP ini dijalankan /etc/init.d/rolex-wifi (hostapd manual) — sama seperti mido, karena netifd/wpad gagal membuat vif di driver wcn36xx. Pengaturan tetap bisa dari LuCI: menu Network → Wireless menulis ke /etc/config/wireless, dan skrip kita menyelaraskan setiap menit (radio-nya tampil non-aktif/disabled di sana karena bukan netifd yang memegangnya — itu normal, bukan tanda WiFi mati).')),
-				E('p', {}, [
-					_('Ganti SSID/sandi/channel: '),
-					E('code', {}, '/usr/bin/rolex-wifi-ctl ssid <nama> | key <sandi> | channel <1-13> | apply'),
-					' ',
-					_('(atau lewat LuCI Network → Wireless)')
-				])
 			])
 		]);
 
@@ -473,11 +452,12 @@ return view.extend({
 				E('h3', {}, _('Pesan')),
 				E('table', { 'class': 'table' }, [
 					E('tr', { 'class': 'tr' }, [
-						E('th', { 'class': 'th' }, _('ID')),
-						E('th', { 'class': 'th' }, _('Status')),
+						E('th', { 'class': 'th' }, _('Pesan')),
 						E('th', { 'class': 'th' }, _('Aksi'))
 					])
-				].concat(smsRows))
+				].concat(smsRows)),
+				sms.length > 10 ? E('p', { 'class': 'cbi-value-description' },
+					_('Menampilkan 10 dari ') + sms.length + _(' SMS terbaru.')) : ''
 			]),
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Kirim SMS')),
@@ -514,20 +494,23 @@ return view.extend({
 				_('SMS dibaca/dikirim lewat QMI (ModemManager), bukan AT.'))
 		]);
 
-		// --- tab: Modem | SMS --------------------------------------------------
+		// --- tab: Modem | Pengaturan | Penjaga | SMS ---------------------------
 		var smsCount = sms.length ? ' (' + sms.length + ')' : '';
+		var panes = { modem: modemSection, pengaturan: setSection, penjaga: guardSection, sms: smsSection };
+		var order = [ 'modem', 'pengaturan', 'penjaga', 'sms' ];
 		var pane = E('div', {});
 		var tabs = {};
 		function showTab(which) {
-			which = (which === 'sms') ? 'sms' : 'modem';
+			if (order.indexOf(which) < 0) which = 'modem';
 			if (pane.firstChild) pane.removeChild(pane.firstChild);
-			pane.appendChild(which === 'sms' ? smsSection : modemSection);
-			[ 'modem', 'sms' ].forEach(function (k) {
+			pane.appendChild(panes[which]);
+			order.forEach(function (k) {
 				if (tabs[k]) tabs[k].setAttribute('class', 'cbi-tab' + (k === which ? ' cbi-tab-active' : ''));
 			});
 			if (location.hash !== '#' + which) history.replaceState(null, '', '#' + which);
 		}
-		[ [ 'modem', _('Modem') ], [ 'sms', _('SMS') + smsCount ] ].forEach(function (t) {
+		[ [ 'modem', _('Modem') ], [ 'pengaturan', _('Pengaturan') ],
+		  [ 'penjaga', _('Penjaga') ], [ 'sms', _('SMS') + smsCount ] ].forEach(function (t) {
 			tabs[t[0]] = E('li', {
 				'class': 'cbi-tab',
 				'style': 'cursor:pointer',
@@ -548,7 +531,7 @@ return view.extend({
 					var ng = {};
 					try { ng = JSON.parse((r[1] && r[1].stdout) || '{}'); } catch (e) { ng = {}; }
 					var nblk = bandsBlock(r[0] && r[0].stdout);
-					var rows = rowsFrom(nd, ng, bandsFrom(nblk, 'current'), bandsFrom(nblk, 'supported'));
+					var rows = rowsFrom(nd, ng, bandsFrom(nblk, 'current'));
 					infoTable.replaceChildren.apply(infoTable, rows);
 					lastRefresh.textContent = _('diperbarui ') + new Date().toLocaleTimeString();
 				}).catch(function () { /* diamkan, coba lagi di siklus berikutnya */ });
@@ -558,7 +541,7 @@ return view.extend({
 
 		return E('div', {}, [
 			E('h2', {}, _('Modem LTE')),
-			E('ul', { 'class': 'cbi-tabmenu' }, [ tabs.modem, tabs.sms ]),
+			E('ul', { 'class': 'cbi-tabmenu' }, order.map(function (k) { return tabs[k]; })),
 			pane
 		]);
 	},

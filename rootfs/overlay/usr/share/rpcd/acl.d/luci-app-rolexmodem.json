@@ -11,15 +11,6 @@
 				],
 				"/usr/bin/rolex-sms-ctl": [
 					"exec"
-				],
-				"/usr/bin/rolex-wifi-ctl": [
-					"exec"
-				],
-				"/etc/init.d/rolex-wifi": [
-					"exec"
-				],
-				"/usr/sbin/iw": [
-					"exec"
 				]
 			},
 			"ubus": {
