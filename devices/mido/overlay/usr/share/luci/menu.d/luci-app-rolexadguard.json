@@ -1,0 +1,15 @@
+{
+	"admin/services/adguard": {
+		"title": "AdGuard Home",
+		"order": "60",
+		"action": {
+			"type": "view",
+			"path": "rolexmodem/adguard"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-rolexadguard"
+			]
+		}
+	}
+}

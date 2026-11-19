@@ -1,0 +1,53 @@
+#!/bin/sh
+# rolex-data-reset — pulihkan data call LTE tanpa reboot perangkat (jalankan manual).
+# Penjaga otomatis di rolex-lte-run memakai tangga yang sama.
+# pakai: rolex-data-reset soft|rf|rf2|modem|auto
+#   soft  = ulang sesi data          rf   = siklus RF (low-power->online) + sesi
+#   rf2   = siklus RF kedua, jeda lebih lama   modem = restart modem MSS
+#   auto  = jalankan berurutan sampai internet kembali
+# Catatan: memuat ulang driver bam-dmux TIDAK dipakai — terbukti meninggalkan qmapmux0.0 tanpa IP.
+LTE=/etc/init.d/mido-data
+LOG=/var/log/mido-data.log
+log() { echo "$(date '+%H:%M:%S') [reset] $*" >> $LOG; }
+internet() { timeout 8 ping -c1 -W3 -I qmapmux0.0 8.8.8.8 >/dev/null 2>&1; }
+# beri waktu sampai 2 menit: sesi baru kadang baru mengalirkan data setelah ~90 detik
+tunggu() { i=0; while [ $i -lt 20 ]; do sleep 6; internet && return 0; i=$((i+1)); done; return 1; }
+
+tahap() {
+	case "$1" in
+	soft)
+		log "sesi data diulang"
+		$LTE restart >/dev/null 2>&1 ;;
+	rf)
+		log "siklus RF (QMI low-power -> online) + sesi ulang"
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+		sleep 5
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+		sleep 3
+		$LTE restart >/dev/null 2>&1 ;;
+	rf2)
+		# siklus RF kedua dengan jeda lebih lama (memuat ulang driver bam-dmux JANGAN —
+		# terbukti meninggalkan qmapmux0.0 tanpa IP)
+		log "siklus RF kedua (low-power -> online, jeda lebih lama) + sesi ulang"
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+		sleep 10
+		timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+		sleep 10
+		$LTE restart >/dev/null 2>&1 ;;
+	modem)
+		log "restart modem MSS"
+		/usr/bin/rolex-modem-ctl reboot >/dev/null 2>&1 ;;
+	esac
+	if tunggu; then log "internet kembali setelah tahap $1"; echo "internet kembali (tahap $1)"; return 0; fi
+	log "tahap $1 belum memulihkan"; echo "tahap $1 belum memulihkan"
+	return 1
+}
+
+case "$1" in
+	soft|rf|rf2|modem) tahap "$1"; exit $? ;;
+	auto|"")
+		for t in soft rf rf2 modem; do tahap "$t" && exit 0; done
+		echo "semua tahap gagal — reboot perangkat pilihan terakhir"
+		exit 1 ;;
+	*) echo "pakai: $0 soft|rf|rf2|modem|auto"; exit 1 ;;
+esac

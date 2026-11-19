@@ -1,0 +1,5 @@
+#!/bin/sh
+# daftarkan interface ke vnstat (sekali; data tetap tersimpan di /var/lib/vnstat)
+for i in qmapmux0.0 usb0 wlan0; do [ -e /sys/class/net/$i ] && vnstat --add -i "$i" >/dev/null 2>&1; done
+/etc/init.d/vnstat enable 2>/dev/null; /etc/init.d/vnstat start >/dev/null 2>&1
+exit 0

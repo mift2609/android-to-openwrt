@@ -1,0 +1,11 @@
+#!/bin/sh
+# Pastikan interface yang penting terdaftar di database vnstat (kalau tidak, vnstat
+# menjawab "No interface matching ... found in database" dan tidak menghitung apa pun).
+# Dipanggil rolex-watchdog; aman dijalankan berulang.
+for i in qmapmux0.0 usb0 wlan0; do
+	[ -e "/sys/class/net/$i" ] || continue
+	vnstat --add -i "$i" >/dev/null 2>&1
+done
+# layanan harus jalan supaya angka bertambah tiap 5 menit
+/etc/init.d/vnstat running >/dev/null 2>&1 || /etc/init.d/vnstat start >/dev/null 2>&1
+exit 0

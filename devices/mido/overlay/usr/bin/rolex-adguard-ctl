@@ -1,0 +1,29 @@
+#!/bin/sh
+if [ -x /opt/mm/usr/bin/mmcli ]; then PATH=/opt/mm/usr/bin:$PATH; export PATH LD_LIBRARY_PATH=/opt/mm/usr/lib; fi
+# Status/aksi AdGuard Home untuk halaman LuCI rolex.
+# AGH punya API sendiri di :3000 (user admin, sandi di /etc/adguardhome.yaml).
+API=http://127.0.0.1:3000/control
+# AGH butuh Basic auth untuk /control/*; sandi disimpan plaintext di biner kecil ini
+# (perangkat LAN, sama seperti sandi SSH/LuCI). Kalau sandi di UI AGH diganti, ubah di sini.
+AUTH="admin:rolex"
+
+running() { pgrep -f "AdGuardHome --no-check" >/dev/null 2>&1 && echo jalan || echo mati; }
+
+case "$1" in
+status)
+	echo "running=$(running)"
+	echo "dns_port=$(netstat -lnu 2>/dev/null | awk '$4 ~ /:53$/ {print $4; exit}' | sed 's/.*://')"
+	echo "web_port=3000"
+	echo "listeners=$(netstat -lnu 2>/dev/null | grep -c ':53 ')"
+	echo "queries=$(curl -s --max-time 4 -u "$AUTH" "$API/stats" 2>/dev/null | sed -n 's/.*"num_dns_queries":\([0-9]*\).*/\1/p')"
+	echo "blocked=$(curl -s --max-time 4 -u "$AUTH" "$API/stats" 2>/dev/null | sed -n 's/.*"num_blocked_filtering":\([0-9]*\).*/\1/p')"
+	f=$(curl -s --max-time 6 -u "$AUTH" "$API/filtering/status" 2>/dev/null)
+	echo "filters=$(printf '%s' "$f" | grep -o '"url"' | wc -l)"
+	echo "rules=$(printf '%s' "$f" | grep -o '"rules_count":[0-9]*' | sed 's/.*://' | awk '{s+=$1} END {print s+0}')"
+	echo "upstream=$(sed -n '/^  upstream_dns:/,/^  [a-z]/p' /etc/adguardhome.yaml | grep -m1 '127.0.0.1' | tr -d ' -')"
+	echo "dnsmasq_port=$(uci -q get dhcp.@dnsmasq[0].port)"
+	;;
+restart) /etc/init.d/adguardhome restart >/dev/null 2>&1; echo "AdGuard Home dimulai ulang" ;;
+update)  curl -s --max-time 60 -u "$AUTH" -X POST http://127.0.0.1:3000/control/filtering/refresh -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1; echo "daftar filter diperbarui" ;;
+*) echo "pakai: $0 status|restart|update" ;;
+esac
