@@ -15,7 +15,12 @@ IFACE=qmapmux0.0
 
 U() { uci -q get "modem.settings.$1" 2>/dev/null; }
 
-mm() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@"; }
+# /opt/mm (bundle Alpine) kalau ada; image hasil rakit pakai ModemManager feed 24.10.
+if [ -x /opt/mm/usr/bin/mmcli ]; then
+	mm() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@"; }
+else
+	mm() { mmcli "$@"; }
+fi
 
 alive() {
 	# XL (dan operator lain) memblokir ICMP ke 8.8.8.8 -> dulu watchdog menganggap uplink

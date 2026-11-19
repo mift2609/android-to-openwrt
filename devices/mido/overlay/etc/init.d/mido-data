@@ -9,7 +9,12 @@
 #    dan kesabaran dinaikkan (6 percobaan x 25 s). Watchdog 60 s tetap jaring terakhir.
 START=92
 
-MM() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@"; }
+# /opt/mm (bundle Alpine) kalau ada; image hasil rakit pakai ModemManager feed 24.10.
+if [ -x /opt/mm/usr/bin/mmcli ]; then
+	MM() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@"; }
+else
+	MM() { mmcli "$@"; }
+fi
 
 wait_modem() {
 	i=0

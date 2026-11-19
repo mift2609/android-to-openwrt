@@ -22,8 +22,22 @@ FIRMWARE=${FIRMWARE:-}
 SIZE=${SIZE:-320M}
 ROOTFS=$OUT/rootfs
 INST=$REPO/scripts/tools/install-ipk-into-rootfs.py
+IB=$OUT/openwrt-imagebuilder-24.10.5-armsr-armv8.Linux-x86_64
+# Paket dasar: LuCI + ModemManager (pengganti /opt/mm) + samba/avahi (samba-share)
+PKGS=${PKGS:-"luci luci-ssl uhttpd rpcd rpcd-mod-luci modemmanager libqmi libmbim libqrtr-glib usbutils block-mount samba4-server avahi-dbus-daemon"}
 
-[ -f "$TAR" ] || { echo "[x] tar tidak ada: $TAR"; exit 1; }
+# TAR = tar rootfs HASIL ImageBuilder (bukan tar polos: tar polos tak punya LuCI/uhttpd/rpcd).
+# Dibuat sekali di sini supaya dependensi kmod/lib diurus ImageBuilder, bukan tangan.
+if [ ! -f "$TAR" ]; then
+	[ -d "$IB" ] || { echo "[x] ImageBuilder belum ada: $IB"; exit 1; }
+	echo "[*] base rootfs via ImageBuilder: $PKGS"
+	rm -rf "$OUT/ib-bin"
+	( cd "$IB" && mkdir -p tmp && make image PACKAGES="$PKGS" \
+		ROOTFS_PARTSIZE=320 BIN_DIR="$OUT/ib-bin" >/dev/null )
+	src=$(ls "$OUT"/ib-bin/*rootfs.tar.gz 2>/dev/null | head -1)
+	[ -n "$src" ] || { echo "[x] rootfs.tar.gz tak dihasilkan"; exit 1; }
+	cp -f "$src" "$TAR"
+fi
 
 echo "[*] ekstrak $TAR"
 rm -rf "$ROOTFS"; mkdir -p "$ROOTFS"
@@ -60,6 +74,10 @@ fi
 
 echo "[*] rc.d (enable init mido)"
 mkdir -p "$ROOTFS/etc/rc.d"
+# paket bisa sudah memasang symlink sendiri (modemmanager: S70) -> buang dulu, hindari start dobel
+for n in modemmanager dbus uhttpd rpcd network dnsmasq firewall dropbear; do
+	rm -f "$ROOTFS"/etc/rc.d/[SK]??"$n"
+done
 for s in mido-early:10 mido-usb:15 wpad:19 dbus:19 dropbear:19 dnsmasq:19 firewall:19 network:20 modemmanager:61 mido-modem:90 mido-data:92 mido-watchdog:93 mido-wifi:94 mido-debug:95 uhttpd:50 rpcd:12; do
 	n=${s%%:*}; l=${s##*:}
 	[ -f "$ROOTFS/etc/init.d/$n" ] && ln -sf "../init.d/$n" "$ROOTFS/etc/rc.d/S${l}$n"

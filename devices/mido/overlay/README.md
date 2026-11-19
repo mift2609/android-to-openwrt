@@ -6,7 +6,6 @@ Isi overlay ini = yang dipakai mido saat ini, dirapikan agar **reproducible** da
 | Jalur | Isi |
 |---|---|
 | `etc/init.d/mido-*` | urutan bring-up: `mido-early` → `mido-usb` → `mido-modem` → `mido-data` → `mido-watchdog` → `mido-wifi` |
-| `etc/init.d/modemmanager` | ModemManager (di device asli dari `/opt/mm`; di rootfs rakit pakai feed 24.10) |
 | `etc/config/*` | network/wireless/dhcp/firewall/system/modem/uhttpd/luci |
 | `usr/bin/timeout` | pengganti applet busybox yang HILANG di image ini (sama seperti rolex) |
 | `usr/libexec/rpcd/mido3g` | backend LuCI panel Modem Manager & Lock Band |

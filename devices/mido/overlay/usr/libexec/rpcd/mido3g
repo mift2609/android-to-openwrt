@@ -6,7 +6,12 @@
 . /usr/share/libubox/jshn.sh
 
 QDEV="qrtr://0"
-MM() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@" 2>/dev/null; }
+# /opt/mm (bundle Alpine) kalau ada; image hasil rakit pakai ModemManager feed 24.10.
+if [ -x /opt/mm/usr/bin/mmcli ]; then
+	MM() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@"; }
+else
+	MM() { mmcli "$@"; }
+fi
 
 # $1 = berkas, $2 = pola baris -> isi tanda kutip pertama
 gv() { grep -m1 -- "$2" "$1" 2>/dev/null | sed "s/.*'\([^']*\)'.*/\1/"; }
