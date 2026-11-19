@@ -1,0 +1,24 @@
+
+config interface 'loopback'
+	option device 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config device
+	option name 'usb0'
+	option macaddr '12:00:00:00:00:01'
+
+config interface 'usb'
+	option device 'usb0'
+	option proto 'static'
+	option ipaddr '192.168.26.1'
+	option netmask '255.255.255.0'
+	option type 'bridge'
+
+config interface 'wifi'
+	option device 'wlan0'
+	option proto 'static'
+	option ipaddr '192.168.27.1'
+	option netmask '255.255.255.0'
+

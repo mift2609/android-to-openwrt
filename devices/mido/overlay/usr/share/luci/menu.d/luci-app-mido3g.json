@@ -1,0 +1,25 @@
+{
+	"admin/services/modem-manager": {
+		"title": "Modem Manager",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "mido3g/overview"
+		},
+		"depends": {
+			"acl": [ "luci-app-mido3g" ]
+		}
+	},
+
+	"admin/services/modem-lockband": {
+		"title": "Lock Band",
+		"order": 61,
+		"action": {
+			"type": "view",
+			"path": "mido3g/band"
+		},
+		"depends": {
+			"acl": [ "luci-app-mido3g" ]
+		}
+	}
+}

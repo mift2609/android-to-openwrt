@@ -1,0 +1,132 @@
+#!/bin/sh /etc/rc.common
+# Bring-up modem msm8953 (MPSS), v6.
+# URUTAN INI YANG BENAR (v4 salah taruh rmtfs sebelum modul -> rmtfs mati
+# "socket(AF_QIPCRTR): Address family not supported" -> MPSS crash-loop dog.c:1525):
+#   1) mdt_loader,qcom_common,qcom_pil_info,qmi_helpers,qcom_sysmon   (dependency)
+#   2) qrtr,qrtr-smd        <- WAJIB sebelum rmtfs (rmtfs butuh socket AF_QIPCRTR)
+#   3) rmtfs -P -v          <- harus hidup, kalau mati modem akan kena watchdog
+#   4) rmnet,ipa2-lite      <- IPA dulu, kalau setelah modem: IPA wedged (perlu reboot)
+#   4b) tunggu /sys/class/net/rmnet_ipa0  <- v6: di kernel 6.19+ driver ipa telat probe;
+#       tanpa netdev ini ModemManager membuang modem tanpa net port dan berhenti.
+#       Dulu bergantung pada watchdog (retry 60 s); sekarang ditunggu di sini.
+#   5) qcom_q6v5,qcom_q6v5_pas,qcom_q6v5_mss  (insmod mss = boot MPSS)
+#   6) start remoteproc modem -> online -> provisioning USIM (AID 'usim')
+START=90
+
+log() { logger -t mido-modem "$*"; echo "$*" >>/tmp/mido-modem.log; }
+
+start() {
+	echo "=== mido-modem $(date) ===" >>/tmp/mido-modem.log
+	(
+	loaded() { lsmod | awk 'NR>1{print $1}' | grep -qx "$(echo "$1" | tr '-' '_')"; }
+	ins() {
+		loaded "$1" && return 0
+		ko=$(find /lib/modules/$(uname -r) -name "$1.ko" 2>/dev/null | head -1)
+		[ -n "$ko" ] || { log "modul $1 tidak ada"; return 1; }
+		/sbin/insmod "$ko" 2>>/tmp/mido-modem.log
+		loaded "$1" && return 0
+		log "insmod $1 gagal"
+		return 1
+	}
+	ipa_dev() { [ -e /sys/class/net/rmnet_ipa0 ]; }
+	wait_ipa() {	# $1 = batas detik; echo jumlah detik terpakai
+		_i=0
+		while [ "$_i" -lt "$1" ]; do
+			ipa_dev && break
+			_i=$((_i+1)); sleep 1
+		done
+		echo "$_i"
+	}
+	rproc_modem() {
+		for r in /sys/class/remoteproc/remoteproc*; do
+			[ "$(cat "$r/name" 2>/dev/null)" = "4080000.remoteproc" ] && { echo "$r"; return 0; }
+		done
+		return 1
+	}
+
+	# 1-2. dependency + QRTR (qrtr dulu supaya rmtfs bisa buka socket)
+	for m in mdt_loader qcom_common qcom_pil_info qmi_helpers qcom_sysmon qrtr qrtr-smd; do
+		ins "$m" || log "peringatan: $m gagal dimuat"
+	done
+	if ! loaded qrtr; then
+		log "FATAL: modul qrtr tidak termuat - rmtfs pasti gagal"
+		exit 0
+	fi
+
+	# 3. EFS + rmtfs (verifikasi hidup, kalau mati jangan lanjut boot modem)
+	mkdir -p /dev/disk/by-partlabel
+	ln -sf /dev/mmcblk0p13 /dev/disk/by-partlabel/modemst1
+	ln -sf /dev/mmcblk0p14 /dev/disk/by-partlabel/modemst2
+	ln -sf /dev/mmcblk0p16 /dev/disk/by-partlabel/fsg
+	ln -sf /dev/mmcblk0p2  /dev/disk/by-partlabel/fsc
+	killall rmtfs 2>/dev/null
+	/usr/sbin/rmtfs -P -v >/tmp/rmtfs.log 2>&1 &
+	sleep 3
+	if [ "$(pidof rmtfs | wc -w)" = "0" ]; then
+		log "rmtfs gagal: $(head -2 /tmp/rmtfs.log | tr '\n' ' ')"
+		log "FATAL: modem tidak dimuat (akan crash-loop tanpa EFS)"
+		exit 0
+	fi
+	log "rmtfs: $(pidof rmtfs | wc -w) proc"
+
+	# 4. IPA + rmnet sebelum modem
+	for m in rmnet ipa2-lite; do ins "$m" || log "peringatan: $m gagal"; done
+
+	# 4b. tunggu netdev IPA (lihat catatan v6 di atas)
+	T=$(wait_ipa 40)
+	if ipa_dev; then
+		log "rmnet_ipa0 siap setelah ${T}s"
+	else
+		log "rmnet_ipa0 belum ada setelah ${T}s - muat ulang modul ipa/rmnet"
+		rmmod ipa2_lite 2>>/tmp/mido-modem.log
+		rmmod rmnet 2>>/tmp/mido-modem.log
+		sleep 2
+		for m in rmnet ipa2-lite; do ins "$m" || log "peringatan: $m gagal"; done
+		T=$(wait_ipa 30)
+		ipa_dev && log "rmnet_ipa0 siap setelah muat ulang (${T}s)" || log "FATAL: rmnet_ipa0 tetap tidak ada (${T}s)"
+	fi
+
+	# 5. q6v5 stack (insmod mss = boot MPSS) + retry kalau rproc belum muncul
+	try=1
+	while [ $try -le 3 ]; do
+		for m in qcom_q6v5 qcom_q6v5_pas qcom_q6v5_mss; do ins "$m"; done
+		rproc_modem >/dev/null && { log "remoteproc modem ada (percobaan $try)"; break; }
+		log "percobaan $try: rproc modem belum ada"
+		[ $try -lt 3 ] && sleep 4
+		try=$((try+1))
+	done
+
+	RP=$(rproc_modem)
+	[ -n "$RP" ] || { log "GAGAL: rproc modem tidak muncul: $(dmesg | grep -i 'unknown symbol' | tail -1)"; exit 0; }
+	if [ "$(cat "$RP/state" 2>/dev/null)" != "running" ]; then
+		echo start > "$RP/state" 2>>/tmp/mido-modem.log
+	fi
+	i=0
+	while [ $i -lt 30 ]; do
+		[ "$(cat "$RP/state" 2>/dev/null)" = "running" ] && break
+		i=$((i+1)); sleep 1
+	done
+	log "modem $RP state=$(cat "$RP/state" 2>/dev/null) tunggu ${i}s"
+
+	# 6. online + USIM
+	sleep 8
+	qmicli -d qrtr://0 --dms-set-operating-mode=online >>/tmp/mido-modem.log 2>&1
+	sleep 5
+	AID=$(qmicli -d qrtr://0 --uim-get-card-status 2>/dev/null | awk '/usim/{f=1} f&&/Application ID/{getline; gsub(/[\t :]/,""); print; exit}')
+	if [ -n "$AID" ]; then
+		qmicli -d qrtr://0 --uim-change-provisioning-session=session-type=primary-gw-provisioning,activate=yes,slot=1,aid="$AID" >>/tmp/mido-modem.log 2>&1
+		log "usim aid=$AID"
+	else
+		log "AID usim belum terbaca (modem mungkin masih boot)"
+	fi
+	log "rmtfs=$(pidof rmtfs | wc -w) serving: $(qmicli -d qrtr://0 --nas-get-serving-system 2>&1 | grep -E "Registration state|PS:" | tr -d "\t" | tr "\n" " ")"
+	) >/dev/null 2>&1 &
+	log "bring-up modem di background"
+}
+
+stop() {
+	killall rmtfs 2>/dev/null
+	for r in /sys/class/remoteproc/remoteproc*; do
+		[ "$(cat "$r/name" 2>/dev/null)" = "4080000.remoteproc" ] && echo stop > "$r/state" 2>/dev/null
+	done
+}

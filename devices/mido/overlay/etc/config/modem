@@ -1,0 +1,20 @@
+
+config settings 'settings'
+	option iptype 'ipv4'
+	option mode 'automatic'
+	# APN: kosong -> skrip pakai "internet". Isi lewat LuCI (Network -> Modem 3G).
+	# JANGAN commit kredensial operator (user/pass) ke repo publik ini.
+	option apn ''
+	option username ''
+	option password ''
+	option bands 'eutran-1,eutran-3,eutran-5,eutran-7,eutran-38,eutran-39,eutran-40,eutran-41'
+
+	# --- watchdog / pemulihan (setelan gaya rolex) ---
+	# rotate_mins: paksa ganti IP tiap N menit (0 = mati)
+	option rotate_mins '0'
+	# restart_after: berapa kali gagal berturut sebelum tangga pemulihan
+	option restart_after '3'
+	# reboot_after_mss: reboot setelah N restart MSS gagal (0 = jangan pernah)
+	option reboot_after_mss '0'
+	option ping_target '8.8.8.8'
+	option grace_secs '60'

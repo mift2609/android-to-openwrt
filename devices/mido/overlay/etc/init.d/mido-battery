@@ -1,0 +1,31 @@
+#!/bin/sh /etc/rc.common
+# Muat modul fuel gauge baterai (pmi8994_fg).
+# Driver ini TIDAK built-in di kernel mido; dibangun terpisah lewat GitHub Actions
+# (repo mift2609/mido-battery-fg) dan disalin ke /lib/modules/<versi>/kernel/drivers/power/supply/.
+# Catatan: /etc/modules.d/ tidak dipakai karena image ini tanpa depmod, sehingga
+# modprobe/kmodloader tidak bisa me-resolve nama modul -> insmod dengan path eksplisit.
+
+START=85
+
+start() {
+	K=$(uname -r)
+	KO=/lib/modules/$K/kernel/drivers/power/supply/pmi8994_fg.ko
+
+	lsmod | grep -q '^pmi8994_fg' && return 0
+	if [ ! -f "$KO" ]; then
+		logger -t mido-battery "modul tidak ada: $KO"
+		return 1
+	fi
+	insmod "$KO" 2>>/tmp/mido-battery.log
+	sleep 1
+	if lsmod | grep -q '^pmi8994_fg'; then
+		logger -t mido-battery "pmi8994_fg dimuat, baterai: $(cat /sys/class/power_supply/qcom-battery/capacity 2>/dev/null)%"
+		return 0
+	fi
+	logger -t mido-battery "gagal memuat pmi8994_fg (lihat /tmp/mido-battery.log)"
+	return 1
+}
+
+stop() {
+	rmmod pmi8994_fg 2>/dev/null
+}

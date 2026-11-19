@@ -1,0 +1,123 @@
+#!/bin/sh /etc/rc.common
+# mido AP WiFi 2.4GHz — setelan dibaca dari UCI (/etc/config/wireless), AP dijalankan
+# hostapd manual di wlan0. Dipakai sebagai jalur utama SEKALIGUS cadangan ketika
+# `wifi up` bawaan netifd gagal di driver wcn36xx (gejala: wlan0 naik lalu hilang,
+# tak ada AP-ENABLED, hostapd tak jalan).
+#
+# Ubah SSID/sandi/channel lewat LuCI (Network -> Wireless) atau `uci set wireless...`;
+# skrip ini akan mengikuti setelan UCI pada start berikutnya (watchdog tiap 60 s).
+# dulu 94; S94 baru jalan ~t+120 s (ke-blokir urutan boot) -> AP nunggu 2 mnt.
+# Modul wcn36xx dimuat di sini, jadi remoteproc wcnss boot di t≈5 s, phy0 t≈15 s.
+START=17
+
+MODS="libarc4 rfkill cfg80211 mac80211 qrtr qrtr-smd mdt_loader qcom_common qcom_pil_info qmi_helpers qcom_sysmon qcom_wcnss_pil wcn36xx"
+
+log() { logger -t mido-wifi "$*"; echo "$*" >>/tmp/wifi.log; }
+
+read_uci() {
+	SSID=$(uci -q get wireless.wifinet0.ssid); [ -n "$SSID" ] || SSID="mido-hotspot"
+	CH=$(uci -q get wireless.radio0.channel); [ -n "$CH" ] || CH="6"
+	ENC=$(uci -q get wireless.wifinet0.encryption); [ -n "$ENC" ] || ENC="none"
+	KEY=$(uci -q get wireless.wifinet0.key)
+	MAC=$(uci -q get wireless.wifinet0.macaddr); [ -n "$MAC" ] || MAC="12:00:00:00:00:0a"
+	HT=$(uci -q get wireless.radio0.htmode); [ -n "$HT" ] || HT="HT20"
+	COUNTRY=$(uci -q get wireless.radio0.country); [ -n "$COUNTRY" ] || COUNTRY="ID"
+}
+
+gen_conf() {
+	{
+		echo "driver=nl80211"
+		echo "interface=wlan0"
+		echo "ssid=$SSID"
+		echo "hw_mode=g"
+		echo "channel=$CH"
+		echo "country_code=$COUNTRY"
+		echo "ieee80211d=1"
+		echo "ieee80211n=1"
+		if [ "$HT" = "HT40" ]; then echo "ht_capab=[HT40][SHORT-GI-40]"; else echo "ht_capab=[HT20][SHORT-GI-20]"; fi
+		echo "wmm_enabled=1"
+		echo "beacon_int=100"
+		echo "dtim_period=2"
+		echo "auth_algs=1"
+		echo "ctrl_interface=/var/run/hostapd"
+		case "$ENC" in
+			psk2|wpa2)  echo "wpa=2"; echo "wpa_key_mgmt=WPA-PSK"; echo "rsn_pairwise=CCMP"; echo "wpa_passphrase=$KEY" ;;
+			psk|wpa)    echo "wpa=1"; echo "wpa_key_mgmt=WPA-PSK"; echo "wpa_pairwise=TKIP"; echo "wpa_passphrase=$KEY" ;;
+			mixed-psk)  echo "wpa=3"; echo "wpa_key_mgmt=WPA-PSK"; echo "wpa_pairwise=TKIP"; echo "rsn_pairwise=CCMP"; echo "wpa_passphrase=$KEY" ;;
+			*)          : ;;   # none / kosong => AP terbuka
+		esac
+	} > /etc/hostapd-mido.conf
+	chmod 600 /etc/hostapd-mido.conf
+}
+
+load_mods() {
+	[ -e /sys/class/ieee80211/phy0 ] && return 0
+	KREL=$(uname -r); MDIR=/lib/modules/$KREL
+	for m in $MODS; do
+		ko=$(find "$MDIR" -name "$m.ko" | head -1)
+		[ -n "$ko" ] || { log "modul $m tidak ada"; continue; }
+		/sbin/insmod "$ko" 2>&1 | while read -r l; do log "insmod $m: $l"; done
+	done
+}
+
+ap_running() {
+	pidof hostapd >/dev/null 2>&1 || return 1
+	iw dev 2>/dev/null | grep -q "type AP" || return 1
+	return 0
+}
+
+start() {
+	echo "=== mido-wifi $(date) ===" >>/tmp/wifi.log
+	read_uci
+	gen_conf
+	log "UCI: ssid=$SSID ch=$CH htmode=$HT enc=$ENC"
+	load_mods
+
+	i=0
+	while [ $i -lt 180 ]; do
+		[ -e /sys/class/ieee80211/phy0 ] && break
+		i=$((i+1)); sleep 1
+	done
+	[ -e /sys/class/ieee80211/phy0 ] || { log "phy0 TIDAK muncul (${i}s)"; return 0; }
+	log "phy0 muncul setelah ${i}s"
+
+	# ambil alih AP: matikan hostapd siapa pun yang sedang jalan supaya setelan UCI
+	# yang baru benar-benar dipakai (hostapd milik netifd bisa bertahan dengan conf lama)
+	if ap_running; then
+		log "hostapd lain terdeteksi — diambil alih agar setelan UCI dipakai"
+		killall hostapd 2>/dev/null
+		sleep 1
+	fi
+
+	# buang interface AP sisa (phy0-ap0 dst) supaya tidak bentrok
+	for j in $(ls /sys/class/net 2>/dev/null | grep -E '^phy[0-9]+-ap[0-9]+$'); do
+		iw dev "$j" del 2>/dev/null
+	done
+
+	[ -e /sys/class/net/wlan0 ] || iw phy phy0 interface add wlan0 type __ap 2>&1 | while read -r l; do log "iw add: $l"; done
+	# tunggu wlan0 benar-benar ada (firmware wcn36xx butuh ~122s di 6.19, sering
+	# melewati batas 90s lama -> hostapd mati tanpa wifi dapat muncul)
+	k=0
+	while [ ! -e /sys/class/net/wlan0 ] && [ $k -lt 60 ]; do k=$((k+1)); sleep 1; done
+	[ -e /sys/class/net/wlan0 ] || { log "wlan0 TIDAK muncul setelah interface add (${k}s)"; return 0; }
+	case "$(cat /sys/class/net/wlan0/address 2>/dev/null)" in
+		00:00:00:00:00:00|"") ip link set wlan0 address "$MAC" ;;
+	esac
+	ip link set wlan0 up
+
+	killall hostapd 2>/dev/null
+	/usr/sbin/hostapd /etc/hostapd-mido.conf >/tmp/hapd.log 2>&1 &
+	sleep 5
+	log "iw: $(iw dev 2>/dev/null | grep -E 'ssid|type|channel' | tr '\n' ' ')"
+	log "hostapd: $(tail -3 /tmp/hapd.log 2>/dev/null | tr '\n' '|')"
+
+	ip addr add 192.168.43.1/24 dev wlan0 2>/dev/null
+	sleep 1
+	/etc/init.d/dnsmasq reload >/dev/null 2>&1
+	log "addr: $(ip -4 addr show wlan0 2>/dev/null | grep inet | tr -s ' ')"
+}
+
+stop() {
+	killall hostapd 2>/dev/null
+	log "AP dihentikan"
+}

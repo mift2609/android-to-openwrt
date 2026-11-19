@@ -1,0 +1,166 @@
+#!/bin/sh /etc/rc.common
+# Uplink data. SELURUH proses di background supaya boot (WiFi/USB) tidak tertunda.
+# Pelajaran penting:
+#  - MM harus start SETELAH modem online. Kalau tidak, MM memprobe rmnet_ipa0,
+#    tidak dapat jawaban QMI, lalu memblok port itu PERMANEN ("fully ignoring port").
+#    Karena itu di sini MM di-restart kalau belum mengenal modem.
+#  - Bearer harus dibaca dari daftar path Bearer/N; "initial bearer path" (Bearer/0) tidak punya IP.
+#  - v3: `restart` layanan MM kadang tak cukup di kernel 6.19 -> killall eksplisit + tunggu,
+#    dan kesabaran dinaikkan (6 percobaan x 25 s). Watchdog 60 s tetap jaring terakhir.
+START=92
+
+MM() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@"; }
+
+wait_modem() {
+	i=0
+	while [ $i -lt 60 ]; do
+		qmicli -d qrtr://0 --dms-get-manufacturer >/dev/null 2>&1 && return 0
+		i=$((i+1)); sleep 3
+	done
+	return 1
+}
+
+wait_mm() {
+	i=0
+	while [ $i -lt 20 ]; do
+		MM -m 0 >/dev/null 2>&1 && return 0
+		i=$((i+1)); sleep 2
+	done
+	return 1
+}
+
+mm_restart() {
+	killall ModemManager 2>/dev/null
+	sleep 3
+	/etc/init.d/modemmanager start >>/tmp/mido-data.log 2>&1
+	sleep 5
+}
+
+bring_up() {
+	wait_modem || logger -t mido-data "QRTR modem tak pernah siap"
+	ok=0
+	for t in 1 2 3 4 5 6; do
+		if wait_mm; then ok=1; break; fi
+		logger -t mido-data "MM belum kenal modem (coba $t) - restart MM"
+		mm_restart
+		sleep 20
+	done
+	[ "$ok" = "1" ] || { logger -t mido-data "menyerah: MM tanpa modem"; return 1; }
+
+	MM -m 0 --enable >/tmp/mm-enable.log 2>&1
+	sleep 5
+	# Lock band / mode dari UCI (disetel di LuCI -> Lock Band). Diterapkan sebelum
+	# connect supaya bearer langsung naik di band yang diizinkan.
+	BANDS=$(uci -q get modem.settings.bands)
+	if [ -n "$BANDS" ]; then
+		# hanya kalau beda: mengganti band memutus bearer, jadi jangan tiap boot
+		CURB=$(MM -m 0 2>/dev/null | tr '\n' ' ' | sed 's/.*Bands.*current: //; s/-*  *IP.*//' |
+			tr ',' '\n' | tr -d ' ' | grep '^eutran' | tr '\n' ',' | sed 's/,$//')
+		WANT=$(printf '%s' "$BANDS" | tr ',' '\n' | grep '^eutran' | tr '\n' ',' | sed 's/,$//')
+		if [ "$CURB" != "$WANT" ]; then
+			MM -m 0 --set-current-bands="$(printf '%s' "$BANDS" | tr ',' '|')" >>/tmp/mido-data.log 2>&1
+			logger -t mido-data "band diubah -> $BANDS"
+		else
+			logger -t mido-data "band sudah sesuai ($WANT), tidak diubah"
+		fi
+	fi
+	# Mode preference TIDAK diterapkan saat boot: qmicli menjawab "replug your device",
+	# artinya modem perlu re-init -> koneksi jadi lama. Hanya panel LuCI yang menyetelnya.
+	# APN diambil dari UCI /etc/config/modem -- bisa diubah dari LuCI (Network -> Modem 3G).
+	# Kalau kosong, pakai "internet" (APN umum operator Indonesia).
+	APN=$(uci -q get modem.settings.apn); [ -n "$APN" ] || APN=internet
+	AUSER=$(uci -q get modem.settings.username)
+	APASS=$(uci -q get modem.settings.password)
+	IPT=$(uci -q get modem.settings.iptype); [ -n "$IPT" ] || IPT=ipv4
+	CONN="apn=$APN,ip-type=$IPT"
+	[ -n "$AUSER" ] && CONN="$CONN,user=$AUSER"
+	[ -n "$APASS" ] && CONN="$CONN,password=$APASS"
+	logger -t mido-data "connect apn=$APN iptype=$IPT"
+	MM -m 0 --simple-connect="$CONN" >/tmp/mm-conn.log 2>&1
+	grep -q "successfully connected" /tmp/mm-conn.log 2>/dev/null || \
+		MM -m 0 --simple-connect="apn=internet,ip-type=ipv4" >>/tmp/mm-conn.log 2>&1
+	sleep 8
+
+	# bearer aktif: ambil semua path lalu uji satu-satu
+	BP=""
+	B=""
+	for p in $(MM -m 0 2>/dev/null | grep -o "Bearer/[0-9]*" | sed 's|Bearer/||' | sort -u); do
+		cur=$(MM -m 0 --bearer="$p" 2>/dev/null)
+		if echo "$cur" | grep -q "connected: yes" && echo "$cur" | grep -q "interface:"; then
+			BP="$p"; B="$cur"; break
+		fi
+	done
+	[ -n "$BP" ] || { logger -t mido-data "tidak ada bearer connected"; return 1; }
+
+	IFACE=$(echo "$B" | grep -m1 "interface" | awk -F: '{print $2}' | xargs)
+	[ -z "$IFACE" ] && IFACE=qmapmux0.0
+	IP=$(echo "$B" | grep -m1 "address" | awk -F: '{print $2}' | xargs)
+	GW=$(echo "$B" | grep -m1 "gateway" | awk -F: '{print $2}' | xargs)
+	PFX=$(echo "$B" | grep -m1 "prefix" | awk -F: '{print $2}' | xargs)
+	# DNS: bearer mengirim "112.215.198.248, 112.215.198.254" — koma harus dibuang
+	DNS=$(echo "$B" | grep -m1 "dns" | awk -F: '{print $2}' | tr ',' ' ' | xargs)
+
+	# Koreksi alamat: operator kadang memberi NETWORK ADDRESS untuk prefix itu
+	# (mis. 10.147.178.64/30 -> semua host-bit 0) -> paket sumber tak sah, tak terkirim.
+	# Naikkan prefix sampai jadi host address sah. (port dari rolex-lte-run)
+	if [ -n "$IP" ] && [ -n "$PFX" ]; then
+		LAST=${IP##*.}
+		BLK=$(( 1 << (32 - PFX) ))
+		if [ $(( LAST % BLK )) -eq 0 ] && [ "$PFX" -lt 31 ]; then
+			PFX=$(( PFX + 1 ))
+			logger -t mido-data "IP $IP network address -> pakai /$PFX"
+		fi
+	fi
+	ip link set "$IFACE" up
+	[ -n "$IP" ] && [ -n "$PFX" ] && ip addr add "$IP/$PFX" dev "$IFACE" 2>/dev/null
+	# onlink: gateway operator kadang di luar mask yang dilaporkan modem ->
+	# tanpa onlink, "ip route" ditolak "Network unreachable". (port dari rolex-lte-run)
+	[ -n "$GW" ] && ip route replace default via "$GW" dev "$IFACE" onlink
+	# catat kapan uplink naik (dipakai rotasi IP di mido-watchdog)
+	cut -d. -f1 /proc/uptime > /tmp/mido-wwan-since 2>/dev/null
+	for d in $DNS; do grep -q "$d" /etc/resolv.conf 2>/dev/null || echo "nameserver $d" >>/etc/resolv.conf; done
+	# dnsmasq membaca resolvfile, BUKAN /etc/resolv.conf — tulis di situ lalu reload,
+	# supaya DNS ikut berubah saat ganti SIM/APN (Smartfren vs XL beda resolver).
+	if [ -n "$DNS" ]; then
+		mkdir -p /tmp/resolv.conf.d
+		: > /tmp/resolv.conf.d/resolv.conf.auto
+		for d in $DNS; do echo "nameserver $d" >>/tmp/resolv.conf.d/resolv.conf.auto; done
+		/etc/init.d/dnsmasq reload >/dev/null 2>&1 || /etc/init.d/dnsmasq restart >/dev/null 2>&1
+		logger -t mido-data "dns upstream dari bearer: $DNS"
+	fi
+
+	nft add table ip mido 2>/dev/null
+	nft flush chain ip mido postrouting 2>/dev/null
+	nft 'add chain ip mido postrouting { type nat hook postrouting priority 100; }' 2>/dev/null
+	nft add rule ip mido postrouting oifname "$IFACE" masquerade
+
+	# MSS clamp WAJIB: MTU uplink 1496 < MTU klien 1500. Tanpa ini paket penuh ditelan
+	# diam-diam (PMTU blackhole) -> TCP retransmisi terus -> kecepatan jatuh drastis.
+	nft 'add chain ip mido forward { type filter hook forward priority 0; policy accept; }' 2>/dev/null
+	nft flush chain ip mido forward 2>/dev/null
+	nft add rule ip mido forward tcp flags syn tcp option maxseg size set 1456
+	nft 'add chain ip mido output { type filter hook output priority 0; policy accept; }' 2>/dev/null
+	nft flush chain ip mido output 2>/dev/null
+	nft add rule ip mido output tcp flags syn tcp option maxseg size set 1456
+	sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+	logger -t mido-data "up: $BP $IFACE $IP/$PFX gw=$GW"
+}
+
+start() {
+	LOCK=/var/run/mido-data.lock
+	# buang lock basi (>5 menit) supaya watchdog tetap bisa memaksa
+	if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
+		rmdir "$LOCK" 2>/dev/null
+	fi
+	if mkdir "$LOCK" 2>/dev/null; then
+		( bring_up; rmdir "$LOCK" 2>/dev/null ) >/tmp/mido-data.log 2>&1 &
+		logger -t mido-data "bring-up data di background"
+	else
+		logger -t mido-data "bring-up data masih berjalan, dilewati (hindari dobel)"
+	fi
+}
+
+stop() {
+	ip link set qmapmux0.0 down 2>/dev/null
+	nft flush table ip mido 2>/dev/null
+}

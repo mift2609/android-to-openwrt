@@ -1,0 +1,37 @@
+#!/bin/sh /etc/rc.common
+# mido diagnostics channel — dump state to /tmp/dbg.txt + start tinynet (http 8080 / shell 23)
+START=95
+
+start() {
+	mkdir -p /tmp
+	{
+		echo "=== mido debug ==="
+		cat /etc/openwrt_release 2>&1 | head -3
+		uname -a
+		echo "--- procd/netifd ---"
+		ps w 2>/dev/null | grep -E "[p]rocd|[n]etifd|[d]ropbear|[d]nsmasq|[u]httpd"
+		echo "--- shadow ---"
+		ls -l /etc/shadow /etc/passwd
+		head -1 /etc/shadow
+		echo "--- root home ---"
+		ls -la /root /root/.ssh 2>&1
+		echo "--- passwd.err ---"
+		cat /tmp/passwd.err 2>&1
+		echo "--- iw dev ---"; iw dev 2>&1
+		echo "--- hostapd ps ---"; ps w 2>/dev/null | grep "[h]ostapd"
+		echo "--- wifi.log ---"
+		cat /tmp/wifi.log 2>&1 | tail -30
+		echo "--- interfaces ---"
+		ip -4 addr show 2>&1
+		echo "--- uci network ---"
+		uci show network 2>&1
+		echo "--- ubus list ---"
+		ubus list 2>&1 | head -20
+		echo "--- logread tail ---"
+		logread 2>&1 | tail -50
+		echo "--- END ==="
+	} > /tmp/dbg.txt 2>&1
+
+	/bin/tinynet http > /tmp/http.err 2>&1 &
+	/bin/tinynet > /tmp/shell.err 2>&1 &
+}

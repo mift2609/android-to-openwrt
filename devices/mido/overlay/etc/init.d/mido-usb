@@ -1,0 +1,61 @@
+#!/bin/sh /etc/rc.common
+# mido USB RNDIS gadget setup (Redmi Note 4 / msm8953)
+START=15
+STOP=85
+
+GADGET=/sys/kernel/config/usb_gadget/mido
+
+start() {
+	mount | grep -q ' /sys/kernel/config ' || mount -t configfs none /sys/kernel/config 2>/dev/null
+
+	mkdir -p "$GADGET" 2>/dev/null
+	[ -d "$GADGET" ] || { logger -t mido-usb "configfs not available"; return 1; }
+
+	cd "$GADGET" || return 1
+	echo 0x1d6b > idVendor
+	echo 0x2742 > idProduct
+	echo 0x0100 > bcdDevice
+	echo 0x0200 > bcdUSB
+
+	mkdir -p strings/0x409
+	echo "mido0001" > strings/0x409/serialnumber
+	echo "Xiaomi" > strings/0x409/manufacturer
+	echo "Redmi Note 4 OpenWrt" > strings/0x409/product
+
+	mkdir -p configs/c.1/strings/0x409
+	echo "RNDIS" > configs/c.1/strings/0x409/configuration
+	echo 500 > configs/c.1/MaxPower
+
+	mkdir -p functions/rndis.usb0
+	echo "12:00:00:00:00:01" > functions/rndis.usb0/dev_addr
+	echo "12:00:00:00:00:02" > functions/rndis.usb0/host_addr
+	ln -sf functions/rndis.usb0 configs/c.1/ 2>/dev/null
+
+	i=0
+	UDC=""
+	while [ $i -lt 100 ]; do
+		UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+		[ -n "$UDC" ] && break
+		i=$((i+1)); sleep 0.2
+	done
+	[ -n "$UDC" ] || { logger -t mido-usb "no UDC found"; return 1; }
+
+	n=0
+	while [ $n -lt 15 ]; do
+		echo "$UDC" > UDC 2>/dev/null && break
+		n=$((n+1)); sleep 1
+	done
+	cd /
+	logger -t mido-usb "gadget bound to $UDC"
+	return 0
+}
+
+stop() {
+	[ -d "$GADGET" ] || return 0
+	echo "" > "$GADGET/UDC" 2>/dev/null
+	rm -f "$GADGET/configs/c.1/rndis.usb0" 2>/dev/null
+	rmdir "$GADGET/functions/rndis.usb0" 2>/dev/null
+	rmdir "$GADGET/configs/c.1/strings/0x409" "$GADGET/configs/c.1" 2>/dev/null
+	rmdir "$GADGET/strings/0x409" 2>/dev/null
+	rmdir "$GADGET" 2>/dev/null
+}

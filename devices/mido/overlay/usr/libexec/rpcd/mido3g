@@ -1,0 +1,423 @@
+#!/bin/sh
+# Backend ubus (rpcd) untuk panel LuCI "Modem 3G" pada mido/msm8953 mainline.
+# Sumber data: qmicli (QRTR -> MPSS) + ModemManager 1.22 di /opt/mm.
+# Keluaran JSON (jshn). Semua QMI/mmcli dijalankan PARALEL ke /tmp supaya respons < 3 s.
+
+. /usr/share/libubox/jshn.sh
+
+QDEV="qrtr://0"
+MM() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@" 2>/dev/null; }
+
+# $1 = berkas, $2 = pola baris -> isi tanda kutip pertama
+gv() { grep -m1 -- "$2" "$1" 2>/dev/null | sed "s/.*'\([^']*\)'.*/\1/"; }
+# $1 = berkas, $2 = pola -> nilai setelah titik dua terakhir, tanpa kutip/spasi
+fv() { grep -m1 -- "$2" "$1" 2>/dev/null | sed "s/.*: *//; s/^'//; s/'$//; s/ *$//"; }
+# $1 = berkas, $2 = blok ('IPv4 configuration'), $3 = kunci
+bv() { awk -v blk="$2" -v key="$3" '$0 ~ blk {f=1} f && $0 ~ key {sub(/.*: */,""); print; exit}' "$1" 2>/dev/null; }
+num() { printf '%s' "$1" | sed 's/[^0-9.+-]//g'; }
+
+collect() {
+	# jalan paralel
+	qmicli -d "$QDEV" --nas-get-signal-info  >/tmp/m3.sig  2>/dev/null &
+	qmicli -d "$QDEV" --nas-get-serving-system >/tmp/m3.ss  2>/dev/null &
+	qmicli -d "$QDEV" --nas-get-rf-band-info  >/tmp/m3.band 2>/dev/null &
+	qmicli -d "$QDEV" --uim-get-card-status   >/tmp/m3.card 2>/dev/null &
+	MM -m 0 >/tmp/m3.modem 2>/dev/null &
+	MM -i 0 >/tmp/m3.sim   2>/dev/null &
+	wait
+}
+
+do_status() {
+	local rssi rsrp rsrq snr tech tech_ss reg opname plmn roam cell tac bandcls chan c1 c2
+	local iccid imsi msisdn pin1 apn iface ip gw pfx dns mtu bconn rx tx dur
+	local imei fwrev qual uptime bpath binfo cand baddr
+
+	collect
+
+	rssi=$(num "$(gv /tmp/m3.sig 'RSSI:')")
+	rsrp=$(num "$(gv /tmp/m3.sig 'RSRP:')")
+	rsrq=$(num "$(gv /tmp/m3.sig 'RSRQ:')")
+	snr=$(num "$(gv /tmp/m3.sig 'SNR:')")
+	tech=$(gv /tmp/m3.sig 'LTE:'); [ -n "$tech" ] || tech=$(gv /tmp/m3.sig 'NR5G:')
+	[ -n "$tech" ] || tech=$(gv /tmp/m3.sig 'WCDMA:'); [ -n "$tech" ] || tech=$(gv /tmp/m3.sig 'GSM:')
+
+	tech_ss=$(gv /tmp/m3.ss '\[0\]:')
+	reg=$(gv /tmp/m3.ss 'Registration state:'); [ -n "$reg" ] || reg=$(fv /tmp/m3.modem 'state:')
+	opname=$(gv /tmp/m3.ss 'Description:')
+	[ -n "$opname" ] || opname=$(fv /tmp/m3.modem 'operator name:')
+	plmn="$(gv /tmp/m3.ss 'MCC:')-$(gv /tmp/m3.ss 'MNC:')"
+	roam=$(gv /tmp/m3.ss 'Roaming status:')
+	cell=$(gv /tmp/m3.ss 'cell ID:')
+	tac=$(gv /tmp/m3.ss 'tracking area code:'); [ -n "$tac" ] || tac=$(gv /tmp/m3.ss 'location area code:')
+	bandcls=$(gv /tmp/m3.band 'Active Band Class:')
+	chan=$(gv /tmp/m3.band 'Active Channel:')
+
+	c1=$(gv /tmp/m3.card 'Card state:')
+	c2=$(awk '/Slot \[2\]/{f=1} f&&/Card state/{sub(/.*Card state: /,""); gsub(/\047/,""); print; exit}' /tmp/m3.card 2>/dev/null)
+	iccid=$(fv /tmp/m3.sim 'iccid:')
+	imsi=$(fv /tmp/m3.sim 'imsi:')
+	msisdn=$(fv /tmp/m3.modem 'own:')
+	pin1=$(gv /tmp/m3.card 'PIN1 state:')
+
+	imei=$(fv /tmp/m3.modem 'imei:')
+	qual=$(fv /tmp/m3.modem 'signal quality:')
+	fwrev=$(grep -m1 'firmware revision:' /tmp/m3.modem 2>/dev/null | sed 's/.*firmware revision: *//' | cut -c1-44)
+	uptime=$(cut -d. -f1 /proc/uptime)
+
+	# bearer aktif: yang connected DAN alamatnya ada di netdev hidup (atau yang punya default route)
+	bpath=""; binfo=""
+	for cand in $(fv /tmp/m3.modem 'paths:') $(grep -o 'Bearer/[0-9]*' /tmp/m3.modem 2>/dev/null | sed 's|Bearer/||' | sort -u); do
+		binfo=$(MM -m 0 --bearer="$cand")
+		printf '%s' "$binfo" | grep -q 'connected: yes' || continue
+		baddr=$(printf '%s' "$binfo" | awk '/IPv4 configuration/{f=1} f&&/address:/{print $NF;exit}')
+		if [ -n "$baddr" ] && ip route show default 2>/dev/null | grep -q "$baddr"; then bpath=$cand; break; fi
+		[ -n "$bpath" ] || bpath=$cand
+	done
+	[ -n "$bpath" ] || binfo=""
+	printf '%s\n' "$binfo" >/tmp/m3.bearer
+
+	apn=$(printf '%s' "$binfo" | grep -m1 'apn:' | sed 's/.*apn: *//')
+	[ -n "$apn" ] || apn=$(fv /tmp/m3.modem 'initial bearer apn:')
+	iface=$(printf '%s' "$binfo" | grep -m1 'interface:' | sed 's/.*interface: *//')
+	ip=$(bv /tmp/m3.bearer 'IPv4 configuration' 'address:')
+	gw=$(bv /tmp/m3.bearer 'IPv4 configuration' 'gateway:')
+	pfx=$(bv /tmp/m3.bearer 'IPv4 configuration' 'prefix:')
+	dns=$(bv /tmp/m3.bearer 'IPv4 configuration' 'dns:')
+	mtu=$(bv /tmp/m3.bearer 'IPv4 configuration' 'mtu:')
+	bconn=$(printf '%s' "$binfo" | grep -m1 'connected:' | sed 's/.*connected: *//')
+	rx=$(printf '%s' "$binfo" | awk '/bytes rx:/{print $NF;exit}')
+	tx=$(printf '%s' "$binfo" | awk '/bytes tx:/{print $NF;exit}')
+	dur=$(printf '%s' "$binfo" | awk '/duration:/{print $NF;exit}')
+
+	json_init
+	json_add_object "signal"
+		json_add_string tech "$tech_ss"
+		json_add_string rssi "$rssi"
+		json_add_string rsrp "$rsrp"
+		json_add_string rsrq "$rsrq"
+		json_add_string snr "$snr"
+		json_add_string quality "$qual"
+		json_add_string band "$bandcls"
+		json_add_string channel "$chan"
+	json_close_object
+
+	json_add_object "net"
+		json_add_string state "$reg"
+		json_add_string operator "$opname"
+		json_add_string plmn "$plmn"
+		json_add_string roaming "$roam"
+		json_add_string cell "$cell"
+		json_add_string tac "$tac"
+	json_close_object
+
+	# status ringkas SIM slot 1: hidup / terbaca-tapi-belum-terdaftar / tidak terdeteksi
+	if printf '%s' "$c1" | grep -qi present; then
+		case "$reg" in
+			registered*) simstat="hidup" ;;
+			*)           simstat="kartu terbaca, belum terdaftar" ;;
+		esac
+	else
+		simstat="tidak terdeteksi"
+	fi
+
+	json_add_object "sim"
+		json_add_string status "$simstat"
+		json_add_string slot1 "$c1"
+		json_add_string slot2 "$c2"
+		json_add_string iccid "$iccid"
+		json_add_string imsi "$imsi"
+		json_add_string msisdn "$msisdn"
+		json_add_string pin "$pin1"
+	json_close_object
+
+	json_add_object "data"
+		json_add_string connected "$bconn"
+		json_add_string apn "$apn"
+		json_add_string iface "$iface"
+		json_add_string ip "$ip"
+		json_add_string gw "$gw"
+		json_add_string prefix "$pfx"
+		json_add_string dns "$dns"
+		json_add_string mtu "$mtu"
+		json_add_string rx "$rx"
+		json_add_string tx "$tx"
+		json_add_string duration "$dur"
+		json_add_string route "$(ip route show default 2>/dev/null | head -1)"
+		json_add_boolean uplink "$([ -n "$ip" ] && ip route show default 2>/dev/null | grep -q "dev ${iface:-qmapmux0.0}" && echo 1 || echo 0)"
+	json_close_object
+
+	json_add_object "modem"
+		json_add_string imei "$imei"
+		json_add_string firmware "$fwrev"
+		json_add_string uptime "$uptime"
+		json_add_string active_bearer "$bpath"
+	json_close_object
+	json_dump
+}
+
+apn_save() {
+	local apn=$1 user=$2 pass=$3 iptype=$4
+	touch /etc/config/modem
+	uci -q set modem.settings=settings
+	uci -q set modem.settings.apn="$apn"
+	uci -q set modem.settings.username="$user"
+	uci -q set modem.settings.password="$pass"
+	uci -q set modem.settings.iptype="$iptype"
+	uci -q commit modem
+}
+
+do_reconnect() {
+	( MM -m 0 --simple-disconnect >/dev/null 2>&1
+	  sleep 3
+	  /etc/init.d/mido-data start >/dev/null 2>&1 ) >/tmp/mido-reconnect.log 2>&1 &
+	json_init; json_add_boolean ok 1
+	json_add_string msg "Reconnect data dijalankan (±30 detik), APN: $(uci -q get modem.settings.apn)"
+	json_dump
+}
+
+do_modem_restart() {
+	(
+	  logger -t mido3g "restart modem dari LuCI"
+	  MM -m 0 --disable             >/tmp/mido-restart.log 2>&1
+	  /etc/init.d/mido-modem stop   >>/tmp/mido-restart.log 2>&1
+	  killall ModemManager 2>/dev/null
+	  sleep 3
+	  /etc/init.d/mido-modem start  >>/tmp/mido-restart.log 2>&1
+	  sleep 28
+	  /etc/init.d/modemmanager start >>/tmp/mido-restart.log 2>&1
+	  sleep 18
+	  /etc/init.d/mido-data start     >>/tmp/mido-restart.log 2>&1
+	) >/dev/null 2>&1 &
+	json_init; json_add_boolean ok 1
+	json_add_string msg "Restart modem (MPSS) berjalan di latar, ±60-90 detik"
+	json_dump
+}
+
+do_sim_switch() {
+	local slot=$1 out
+	[ -n "$slot" ] || slot=2
+	out=$(qmicli -d "$QDEV" --uim-switch-slot="$slot" 2>&1)
+	json_init
+	if printf '%s' "$out" | grep -qi 'error'; then
+		json_add_boolean ok 0
+		json_add_string msg "Tidak bisa: $(printf '%s' "$out" | sed 's/^.*error: //') — modem MPSS hanya mengenal satu slot SIM"
+	else
+		json_add_boolean ok 1
+		json_add_string msg "Pindah ke slot $slot diterima modem; tunggu re-attach"
+	fi
+	json_dump
+}
+
+# Siklus USIM: power off -> power on -> online -> provisioning ulang -> reconnect data.
+# Sama persis dengan urutan yang dipakai /etc/init.d/mido-modem saat boot.
+usim_provision() {
+	local aid
+	qmicli -d "$QDEV" --dms-set-operating-mode=online >/dev/null 2>&1
+	sleep 5
+	aid=$(qmicli -d "$QDEV" --uim-get-card-status 2>/dev/null | \
+		awk '/usim/{f=1} f&&/Application ID/{getline; gsub(/[ \t:]/,""); print; exit}')
+	[ -n "$aid" ] && qmicli -d "$QDEV" --uim-change-provisioning-session=\
+"session-type=primary-gw-provisioning,activate=yes,slot=1,aid=$aid" >/dev/null 2>&1
+	logger -t mido3g "usim provision aid=${aid:-<kosong>}"
+	/etc/init.d/mido-data start >/dev/null 2>&1
+}
+
+do_sim_power() {
+	local act=$1 out
+	case "$act" in
+		off)   out=$(qmicli -d "$QDEV" --uim-sim-power-off=1 2>&1);;
+		on)    out=$(qmicli -d "$QDEV" --uim-sim-power-on=1 2>&1);;
+		cycle) out=$(qmicli -d "$QDEV" --uim-sim-power-off=1 2>&1); sleep 3
+		       out="$out / $(qmicli -d "$QDEV" --uim-sim-power-on=1 2>&1)"
+		       ( usim_provision ) >/tmp/mido-simcycle.log 2>&1 & ;;
+		*)     out="aksi tak dikenal";;
+	esac
+	json_init
+	printf '%s' "$out" | grep -qi error && json_add_boolean ok 0 || json_add_boolean ok 1
+	json_add_string msg "$out"
+	json_dump
+}
+
+# ---------- lock band ----------
+do_band_get() {
+	local rf mode cur sup tech chan
+	qmicli -d "$QDEV" --nas-get-rf-band-info >/tmp/m3.rfband 2>/dev/null
+	qmicli -d "$QDEV" --nas-get-system-selection-preference >/tmp/m3.ssp 2>/dev/null
+	MM -m 0 >/tmp/m3.bands 2>/dev/null
+
+	rf=$(grep -m1 'Active Band Class:' /tmp/m3.rfband 2>/dev/null | sed "s/.*'\(.*\)'.*/\1/")
+	chan=$(grep -m1 'Active Channel:' /tmp/m3.rfband 2>/dev/null | sed "s/.*'\(.*\)'.*/\1/")
+	mode=$(grep -m1 'Mode preference:' /tmp/m3.ssp 2>/dev/null | sed "s/.*'\(.*\)'.*/\1/")
+	tech=$(grep -m1 'Radio Interface:' /tmp/m3.rfband 2>/dev/null | sed "s/.*'\(.*\)'.*/\1/")
+
+	# blok "Bands" pada mmcli -m 0: supported dan current masing-masing bisa
+	# berlanjut ke baris berikutnya -> digabung, tanda '|' kolom dibuang.
+	sup=$(awk '/Bands/{f=1} f&&/IP/{exit} f{print}' /tmp/m3.bands |
+		awk '/supported:/{f=1;sub(/.*supported: */,"");print;next} /current:/{f=0} f{gsub(/\|/,"");print}' |
+		tr '\n' ' ' | tr -s ' ')
+	cur=$(awk '/Bands/{f=1} f&&/IP/{exit} f{print}' /tmp/m3.bands |
+		awk '/current:/{f=1;sub(/.*current: */,"");print;next} f{gsub(/\|/,"");print}' |
+		tr '\n' ' ' | sed 's/ *-\+ *$//' | tr -s ' ')
+
+	json_init
+	json_add_string active_band "$rf"
+	json_add_string mode "$mode"
+	json_add_string current "$cur"
+	json_add_string supported "$sup"
+	json_add_string tech "$tech"
+	json_add_string channel "$chan"
+	json_dump
+}
+
+do_band_set() {
+	local bands=$1 mode=$2 out msg=""
+	# hanya izinkan huruf/angka/koma/minus: mencegah argumen nyasar ke shell
+	case "$bands" in *[!a-z0-9,-]*) json_init; json_add_boolean ok 0; json_add_string msg "nilai band tidak valid"; json_dump; return;; esac
+	case "$mode" in *[!a-z0-9-]*) json_init; json_add_boolean ok 0; json_add_string msg "nilai mode tidak valid"; json_dump; return;; esac
+
+	json_init
+	if [ -n "$bands" ]; then
+		out=$(MM -m 0 --set-current-bands="$(printf '%s' "$bands" | tr ',' '|')" 2>&1)
+		printf '%s' "$out" | grep -qi error && { json_add_boolean ok 0; json_add_string msg "$out"; json_dump; return; }
+		msg="band diset: $bands"
+		uci -q set modem.settings.bands="$bands"; uci -q commit modem
+	fi
+	if [ -n "$mode" ]; then
+		out=$(qmicli -d "$QDEV" --nas-set-system-selection-preference="$mode" 2>&1)
+		msg="$msg; mode: $mode"
+		uci -q set modem.settings.mode="$mode"; uci -q commit modem
+	fi
+	if [ -n "$bands" ]; then
+		( sleep 4
+		  MM -m 0 --simple-disconnect >/dev/null 2>&1
+		  sleep 2
+		  /etc/init.d/mido-data start >/dev/null 2>&1 ) >/tmp/mido-band.log 2>&1 &
+		msg="$msg; data disambung ulang (±30 s)"
+	fi
+	json_add_boolean ok 1
+	json_add_string msg "${msg:-tidak ada perubahan}"
+	json_dump
+}
+
+# ---------- daya / baterai ----------
+# Semua /sys/class/power_supply dipindai: charger USB selalu ada; supply bertipe
+# "Battery" hanya muncul kalau driver fuel-gauge (CONFIG_BATTERY_PMI8994_FG) aktif.
+do_power() {
+	local dir type name usb_online usb_status usb_health usb_type usb_icl usb_ccl usb_term
+	local bat_name bat_present bat_cap bat_status bat_v bat_t bat_h bat_i bat_chg done=0
+
+	usb_online=""; usb_status=""; usb_health=""; usb_type=""; usb_icl=""; usb_ccl=""; usb_term=""
+	bat_name=""; bat_present=""; bat_cap=""; bat_status=""; bat_v=""; bat_t=""; bat_h=""; bat_i=""; bat_chg=""
+
+	for dir in /sys/class/power_supply/*; do
+		[ -d "$dir" ] || continue
+		type=$(cat "$dir/type" 2>/dev/null)
+		name=$(basename "$dir")
+		case "$type" in
+			USB)
+				usb_online=$(cat "$dir/online" 2>/dev/null)
+				usb_status=$(cat "$dir/status" 2>/dev/null)
+				usb_health=$(cat "$dir/health" 2>/dev/null)
+				usb_type=$(cat "$dir/usb_type" 2>/dev/null | tr '\n' ' ')
+				usb_icl=$(cat "$dir/input_current_limit" 2>/dev/null)
+				usb_ccl=$(cat "$dir/constant_charge_current" 2>/dev/null)
+				usb_term=$(cat "$dir/charge_term_current" 2>/dev/null)
+				;;
+			Battery)
+				bat_name=$name
+				bat_present=$(cat "$dir/present" 2>/dev/null)
+				bat_cap=$(cat "$dir/capacity" 2>/dev/null)
+				bat_status=$(cat "$dir/status" 2>/dev/null)
+				bat_v=$(cat "$dir/voltage_now" 2>/dev/null)
+				bat_t=$(cat "$dir/temp" 2>/dev/null)
+				bat_h=$(cat "$dir/health" 2>/dev/null)
+				bat_i=$(cat "$dir/current_now" 2>/dev/null)
+				bat_chg=$(cat "$dir/charge_now" 2>/dev/null)
+				;;
+		esac
+	done
+
+	json_init
+	json_add_object "charger"
+		json_add_string online "$usb_online"
+		json_add_string status "$usb_status"
+		json_add_string health "$usb_health"
+		json_add_string type "$usb_type"
+		json_add_string input_current "$usb_icl"
+		json_add_string charge_current "$usb_ccl"
+		json_add_string term_current "$usb_term"
+	json_close_object
+	json_add_object "battery"
+		json_add_boolean available "$([ -n "$bat_name" ] && echo 1 || echo 0)"
+
+		json_add_string name "$bat_name"
+		json_add_string present "$bat_present"
+		json_add_string capacity "$bat_cap"
+		json_add_string status "$bat_status"
+		json_add_string voltage "$bat_v"
+		json_add_string temp "$bat_t"
+		json_add_string health "$bat_h"
+		json_add_string current "$bat_i"
+		json_add_string charge "$bat_chg"
+		json_close_object   # tutup attrs
+		# semua atribut mentah dari /sys/class/power_supply/<bat>/ (kecuali uevent)
+		json_close_object
+	json_dump
+}
+
+do_logs() {
+	json_init
+	json_add_string data "=== mido-data ===
+$(tail -n 10 /tmp/mido-data.log 2>/dev/null)
+=== mido-modem ===
+$(tail -n 10 /tmp/mido-modem.log 2>/dev/null)
+=== mido-watchdog ===
+$(tail -n 6 /tmp/mido-wd.log 2>/dev/null)
+=== mm-conn ===
+$(tail -n 5 /tmp/mm-conn.log 2>/dev/null)"
+	json_dump
+}
+
+case "$1" in
+list)
+	cat <<'EOF'
+{
+	"status": {},
+	"apn_set": { "apn": "str", "username": "str", "password": "str", "iptype": "str" },
+	"reconnect": {},
+	"modem_restart": {},
+	"sim_switch": { "slot": "int" },
+	"sim_power": { "action": "str" },
+	"band_get": {},
+	"power": {},
+	"band_set": { "bands": "str", "mode": "str" },
+	"logs": {}
+}
+EOF
+	;;
+call)
+	in=$(cat)
+	[ -n "$in" ] && json_load "$in" 2>/dev/null
+	case "$2" in
+	status)        do_status ;;
+	apn_set)
+		json_get_var apn apn
+		json_get_var usr username
+		json_get_var pwd password
+		json_get_var ipt iptype
+		[ -n "$ipt" ] || ipt=ipv4
+		apn_save "$apn" "$usr" "$pwd" "$ipt"
+		do_reconnect
+		;;
+	reconnect)     do_reconnect ;;
+	modem_restart) do_modem_restart ;;
+	sim_switch)    json_get_var slot slot; do_sim_switch "$slot" ;;
+	sim_power)     json_get_var act action; do_sim_power "$act" ;;
+	band_get)      do_band_get ;;
+	power)         do_power ;;
+	band_set)      json_get_var bands bands; json_get_var mode mode; do_band_set "$bands" "$mode" ;;
+	logs)          do_logs ;;
+	*)             json_init; json_add_boolean ok 0; json_add_string msg "method tak dikenal"; json_dump ;;
+	esac
+	;;
+esac

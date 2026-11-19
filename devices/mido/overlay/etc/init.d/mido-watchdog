@@ -1,0 +1,188 @@
+#!/bin/sh /etc/rc.common
+# Watchdog mido v2: cek tiap 60 s + TANGGA PEMULIHAN + ROTASI IP (port dari rolex-lte-run).
+#  0) uplink qmapmux0.0 sehat? (uji 3 lapis: ping target, gateway, HTTP 204)
+#  1) gagal berturut >= restart_after -> tangga: siklus RF -> RF lama -> restart modem MSS -> reboot
+#  2) rotasi IP tiap rotate_mins menit (0 = mati) -> sesi data diulang, minta IP baru
+#  3) bring-up data nyangkut (lock >5 mnt) -> bunuh sisa proses + ulang
+#  4) WiFi: wlan0 atau hostapd hilang -> bangunkan ulang AP
+# Opsi dari /etc/config/modem (modem.settings): rotate_mins, restart_after, reboot_after_mss,
+# ping_target, grace_secs. Nilai kosong -> default di bawah.
+START=93
+
+PIDF=/var/run/mido-watchdog.pid
+STATE=/var/run/mido-wd.state
+IFACE=qmapmux0.0
+
+U() { uci -q get "modem.settings.$1" 2>/dev/null; }
+
+mm() { env LD_LIBRARY_PATH=/opt/mm/usr/lib /opt/mm/usr/bin/mmcli "$@"; }
+
+alive() {
+	# XL (dan operator lain) memblokir ICMP ke 8.8.8.8 -> dulu watchdog menganggap uplink
+	# mati tiap 60 s lalu memutus data. Urutan: ping target (ikat iface), ping target biasa,
+	# gateway default (bukti tunnel hidup), lalu HTTP 204 (bukti internet nyata).
+	timeout 6 ping -c1 -W4 -I "$IFACE" "$PING_TARGET" >/dev/null 2>&1 && return 0
+	timeout 6 ping -c1 -W4 "$PING_TARGET" >/dev/null 2>&1 && return 0
+	gw=$(ip route show default 2>/dev/null | awk '/via/{print $3; exit}')
+	[ -n "$gw" ] && timeout 6 ping -c1 -W3 "$gw" >/dev/null 2>&1 && return 0
+	wget -q -T8 -O /dev/null http://connectivitycheck.gstatic.com/generate_204 2>/dev/null && return 0
+	return 1
+}
+
+reconnect_data() {
+	# MM kadang belum mengenal modem (baru boot / habis udev event) -> restart dulu
+	if ! mm -m 0 >/dev/null 2>&1; then
+		logger -t mido-wd "MM tanpa modem -> restart ModemManager"
+		echo "$(date) restart MM (tanpa modem)" >>/tmp/mido-wd.log
+		/etc/init.d/modemmanager restart >>/tmp/mido-wd.log 2>&1
+		sleep 20
+	fi
+	mm -m 0 --simple-disconnect >>/tmp/mido-wd.log 2>&1
+	sleep 4
+	/etc/init.d/mido-data start >>/tmp/mido-wd.log 2>&1
+	# tunggu uplink balik (maks ~110 s) sebelum dinilai lagi
+	sleep 110
+}
+
+rf_cycle() {
+	# pemulihan ringan: matikan RF lewat QMI (low-power) lalu online lagi
+	logger -t mido-wd "siklus RF (QMI low-power -> online)"
+	echo "$(date) siklus RF" >>/tmp/mido-wd.log
+	timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=low-power >/dev/null 2>&1
+	sleep 5
+	timeout 15 qmicli -d qrtr://0 --dms-set-operating-mode=online >/dev/null 2>&1
+	sleep 3
+}
+
+modem_restart() {
+	# bring-up penuh modem MSS (modul + rmtfs + remoteproc) via init mido-modem
+	logger -t mido-wd "restart modem MSS (mido-modem)"
+	echo "$(date) restart modem MSS" >>/tmp/mido-wd.log
+	/etc/init.d/mido-modem stop >/dev/null 2>&1
+	sleep 3
+	/etc/init.d/mido-modem start >>/tmp/mido-wd.log 2>&1
+	i=0
+	while [ $i -lt 30 ]; do
+		qmicli -d qrtr://0 --dms-get-manufacturer >/dev/null 2>&1 && break
+		sleep 3; i=$((i+3))
+	done
+}
+
+escalate() {
+	case "$stage" in
+	0)
+		logger -t mido-wd "tahap 1: siklus RF"
+		rf_cycle ;;
+	1)
+		logger -t mido-wd "tahap 2: siklus RF kedua (lebih lama)"
+		rf_cycle; sleep 20 ;;
+	2)
+		logger -t mido-wd "tahap 3: restart modem MSS"
+		modem_restart ;;
+	*)
+		logger -t mido-wd "tahap lanjut: restart modem MSS lagi"
+		modem_restart
+		mss=$((mss + 1))
+		if [ "$REBOOT_AFTER_MSS" -gt 0 ] 2>/dev/null && [ "$mss" -ge "$REBOOT_AFTER_MSS" ]; then
+			logger -t mido-wd "pemulihan gagal $mss kali -> REBOOT perangkat"
+			echo "$(date) reboot" >>/tmp/mido-wd.log
+			sync; sleep 3; reboot
+		fi ;;
+	esac
+	stage=$((stage + 1))
+	echo "bad=0 stage=$stage mss=$mss" >"$STATE"
+	reconnect_data
+}
+
+wifi_guard() {
+	iw dev wlan0 info >/dev/null 2>&1 && pidof hostapd >/dev/null || {
+		logger -t mido-wd "WiFi AP mati -> bangunkan ulang"
+		echo "$(date) wifi mati -> restart mido-wifi" >>/tmp/mido-wd.log
+		wifi_restart
+		return 0
+	}
+	# setelan UCI (LuCI) berubah tapi AP belum ikut? (ssid/channel saja yang dicek)
+	want=$(uci -q get wireless.wifinet0.ssid)
+	have=$(iw dev wlan0 info 2>/dev/null | awk '/ssid/{print $2}')
+	conf=$(sed -n 's/^ssid=//p' /etc/hostapd-mido.conf 2>/dev/null | head -1)
+	[ -n "$want" ] || return 0
+	if [ "$want" != "$have" ] || [ "$want" != "$conf" ]; then
+		logger -t mido-wd "setelan WiFi berubah ($have/$conf -> $want) -> terapkan"
+		echo "$(date) terapkan ssid $want" >>/tmp/mido-wd.log
+		wifi_restart
+	fi
+}
+
+wifi_restart() {
+	# buang interface AP sisa buatan netifd (phy0-ap0 dst) supaya tidak bentrok
+	for i in $(ls /sys/class/net 2>/dev/null | grep -E '^phy[0-9]+-ap[0-9]+$'); do
+		iw dev "$i" del >/dev/null 2>&1
+	done
+	/etc/init.d/mido-wifi stop >/dev/null 2>&1
+	sleep 2
+	/etc/init.d/mido-wifi start >>/tmp/mido-wd.log 2>&1
+	sleep 10
+}
+
+start() {
+	ROTATE=$(U rotate_mins);            [ -n "$ROTATE" ] || ROTATE=0
+	RESTART_AFTER=$(U restart_after);   [ -n "$RESTART_AFTER" ] || RESTART_AFTER=3
+	REBOOT_AFTER_MSS=$(U reboot_after_mss); [ -n "$REBOOT_AFTER_MSS" ] || REBOOT_AFTER_MSS=0
+	PING_TARGET=$(U ping_target);       [ -n "$PING_TARGET" ] || PING_TARGET=8.8.8.8
+	GRACE=$(U grace_secs);              [ -n "$GRACE" ] || GRACE=60
+	export ROTATE RESTART_AFTER REBOOT_AFTER_MSS PING_TARGET GRACE
+	[ -f "$PIDF" ] && kill "$(cat $PIDF)" 2>/dev/null
+	(
+		exec >/dev/null 2>&1
+		bad=0; stage=0; mss=0
+		while true; do
+			sleep 60
+			wifi_guard
+
+			# bring-up data nyangkut? lock >5 mnt -> bersihkan + ulang
+			if [ -d /var/run/mido-data.lock ] &&
+			   [ -n "$(find /var/run/mido-data.lock -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
+				logger -t mido-wd "bring-up data nyangkut (lock >5mnt) -> bersihkan"
+				killall mmcli qmicli 2>/dev/null
+				rm -rf /var/run/mido-data.lock
+				reconnect_data
+			fi
+
+			if ! ip addr show "$IFACE" 2>/dev/null | grep -q "inet "; then
+				bad=$((bad + 1))
+				logger -t mido-wd "$IFACE tanpa IP (gagal $bad/$RESTART_AFTER)"
+				if [ "$bad" -ge "$RESTART_AFTER" ]; then bad=0; escalate; else reconnect_data; fi
+				echo "bad=$bad stage=$stage mss=$mss" >"$STATE"
+				continue
+			fi
+
+			if alive; then
+				bad=0; stage=0; mss=0
+				echo "bad=0 stage=0 mss=0" >"$STATE"
+				# rotasi IP berkala
+				if [ "$ROTATE" -gt 0 ] 2>/dev/null; then
+					since=$(cat /tmp/mido-wwan-since 2>/dev/null)
+					now=$(cut -d. -f1 /proc/uptime)
+					if [ -n "$since" ] && [ $((now - since)) -ge $((ROTATE * 60)) ]; then
+						logger -t mido-wd "rotasi IP ($ROTATE menit) -> sesi data diulang"
+						echo "$(date) rotasi IP" >>/tmp/mido-wd.log
+						reconnect_data
+					fi
+				fi
+				continue
+			fi
+
+			bad=$((bad + 1))
+			logger -t mido-wd "internet mati (gagal $bad/$RESTART_AFTER)"
+			if [ "$bad" -ge "$RESTART_AFTER" ]; then bad=0; escalate; else reconnect_data; fi
+			echo "bad=$bad stage=$stage mss=$mss" >"$STATE"
+		done
+	) &
+	echo $! > "$PIDF"
+	logger -t mido-wd "watchdog v2 mulai (pid $(cat $PIDF), rotate=$ROTATE restart_after=$RESTART_AFTER reboot_after_mss=$REBOOT_AFTER_MSS)"
+}
+
+stop() {
+	[ -f "$PIDF" ] && kill "$(cat $PIDF)" 2>/dev/null && rm -f "$PIDF"
+	logger -t mido-wd "watchdog berhenti"
+}

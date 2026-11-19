@@ -1,0 +1,17 @@
+{
+	"luci-app-mido3g": {
+		"description": "Panel modem 3G (sinyal, APN, SIM, restart modem) untuk mido",
+		"read": {
+			"ubus": {
+				"mido3g": [ "status", "logs", "band_get", "power" ]
+			},
+			"uci": [ "modem" ]
+		},
+		"write": {
+			"ubus": {
+				"mido3g": [ "apn_set", "reconnect", "modem_restart", "sim_switch", "sim_power", "band_set" ]
+			},
+			"uci": [ "modem" ]
+		}
+	}
+}
