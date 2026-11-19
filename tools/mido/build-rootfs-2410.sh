@@ -24,7 +24,7 @@ ROOTFS=$OUT/rootfs
 INST=$REPO/scripts/tools/install-ipk-into-rootfs.py
 IB=$OUT/openwrt-imagebuilder-24.10.5-armsr-armv8.Linux-x86_64
 # Paket dasar: LuCI + ModemManager (pengganti /opt/mm) + samba/avahi (samba-share)
-PKGS=${PKGS:-"luci luci-ssl uhttpd rpcd rpcd-mod-luci qmi-utils libqmi libmbim libqrtr-glib usbutils block-mount samba4-server luci-app-samba4 avahi-dbus-daemon hostapd iw ttyd adguardhome curl luci-app-vnstat2 vnstat2"}
+PKGS=${PKGS:-"luci luci-ssl uhttpd rpcd rpcd-mod-luci qmi-utils libqmi libmbim libqrtr-glib usbutils block-mount samba4-server luci-app-samba4 avahi-dbus-daemon hostapd iw ttyd adguardhome curl luci-app-vnstat2 vnstat2 bash ca-bundle ip-full ruby ruby-yaml unzip luci-compat dnsmasq-full -dnsmasq"}
 
 # TAR = tar rootfs HASIL ImageBuilder (bukan tar polos: tar polos tak punya LuCI/uhttpd/rpcd).
 # Dibuat sekali di sini supaya dependensi kmod/lib diurus ImageBuilder, bukan tangan.
@@ -109,7 +109,7 @@ mkdir -p "$ROOTFS/etc/rc.d"
 for n in modemmanager udev-alpine dbus uhttpd rpcd network dnsmasq firewall dropbear; do
 	rm -f "$ROOTFS"/etc/rc.d/[SK]??"$n"
 done
-for s in mido-early:10 mido-usb:15 nft-modules:15 wpad:19 dbus:19 dropbear:19 dnsmasq:19 firewall:19 network:20 udev-alpine:61 modemmanager:91 mido-modem:90 mido-data:92 mido-watchdog:93 mido-wifi:94 mido-debug:95 uhttpd:50 rpcd:12; do
+for s in mido-early:10 mido-usb:15 nft-modules:15 wpad:19 dbus:19 dropbear:19 dnsmasq:19 firewall:19 network:20 udev-alpine:61 modemmanager:91 mido-modem:90 mido-data:92 mido-watchdog:93 mido-wifi:94 mido-debug:95 openclash:99 uhttpd:50 rpcd:12; do
 	n=${s%%:*}; l=${s##*:}
 	[ -f "$ROOTFS/etc/init.d/$n" ] && ln -sf "../init.d/$n" "$ROOTFS/etc/rc.d/S${l}$n"
 done

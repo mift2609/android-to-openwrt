@@ -121,3 +121,11 @@ Tanpa bundle, skrip build mencetak peringatan; LTE tak akan hidup.
 NAT/MSS sepenuhnya di fw4: zone `hotspot` (usb+wifi) -> zone `wan` (`list device qmapmux0.0`, input/forward DROP, masq+mtu_fix). Tak ada lagi `table ip mido` dari `mido-data`.
 
 Modul nft (`nft_ct`, `nft_reject_inet`, `nft_fib_inet`) tak termuat otomatis karena `ipv6.ko` adalah modul dan kmodloader tak mengurutkannya. `/etc/init.d/nft-modules` (S15) melakukan insmod eksplisit sebelum fw4 (S19). Tanpa itu fw4 gagal render: `Error: No such file or directory` pada `ct state vmap` / `reject`.
+
+## OpenClash (TUN)
+
+- Paket `luci-app-openclash_0.48.002_all.ipk` (dari GitHub, `Depends` dibuang `kmod-tun`) + core `clash_meta` aarch64 dari DE6 (`alpha-gbeb1f27`) disimpan di `out/mido/ipk/`.
+- Kernel mido tak punya `nft_tproxy`, jadi mode redir/tproxy tak bisa. Dipakai `en_mode='fake-ip-tun'`, `stack_type='system'`; TUN (`/dev/net/tun`) built-in.
+- DNS: klien -> dnsmasq `:53` -> AdGuard Home `:5353` (filter) -> clash `127.0.0.1:7874` (fake-ip). `enable_redirect_dns='2'` (firewall redirect) supaya DNS liar dari klien tetap dibajak.
+- Config contoh tanpa node: `/etc/openclash/config/test.yaml` (`MATCH,DIRECT`). Ganti lewat LuCI (Config File / Subscription) untuk proxy sungguhan.
+- Start: `/etc/init.d/openclash start` (S99). Butuh `luci-compat`, `ruby`, `ruby-yaml`, `dnsmasq-full`, `ip-full`, `bash`, `ca-bundle`, `unzip`.

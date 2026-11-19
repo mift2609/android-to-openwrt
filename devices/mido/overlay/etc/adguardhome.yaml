@@ -1,24 +1,18 @@
-# AdGuard Home untuk rolex — konfigurasi awal (bisa diubah lewat UI http://<ip-rolex>:3000)
-#
-# Alur DNS di rolex:
-#   klien LAN  -> AdGuard Home :53  (saring iklan/malware, DoH/DoT opsional)
-#                  -> upstream 127.0.0.1:5353 = dnsmasq  (nama lokal .lan, DHCP, DNS operator)
-#   dnsmasq tetap melayani DHCP + nama lokal, tapi pindah port ke 5353.
 http:
+  pprof:
+    port: 6060
+    enabled: false
   address: 0.0.0.0:3000
   session_ttl: 720h
 users:
   - name: admin
-    password: $2b$10$qVD.tMz7wgjmm9PhFIS.vONbyHnZKkQ5KEZXmrdzS4NdmuvDMZz5m   # sandi: rolex (GANTI lewat UI)
+    password: $2b$10$qVD.tMz7wgjmm9PhFIS.vONbyHnZKkQ5KEZXmrdzS4NdmuvDMZz5m
 auth_attempts: 5
 block_auth_min: 15
 http_proxy: ""
 language: id
 theme: auto
 dns:
-  # AdGuard TIDAK memegang port 53 lagi. Klien menanyakan dnsmasq (192.168.*.1:53),
-  # dnsmasq meneruskan ke sini (127.0.0.1:5353) untuk penyaringan iklan, lalu AGH
-  # meneruskan ke DNS publik. Sebelumnya AGH di :53 membuat klien WiFi "tak ada internet".
   bind_hosts:
     - 127.0.0.1
   port: 5353
@@ -29,9 +23,7 @@ dns:
   ratelimit_whitelist: []
   refuse_any: true
   upstream_dns:
-    - 8.8.8.8
-    - 8.8.4.4
-    - 1.1.1.1
+    - 127.0.0.1:7874
   upstream_dns_file: ""
   bootstrap_dns:
     - 9.9.9.10
@@ -53,22 +45,17 @@ dns:
   bogus_nxdomain: []
   aaaa_disabled: false
   enable_dnssec: false
+  edns_client_subnet:
+    custom_ip: ""
+    enabled: false
+    use_custom: false
   max_goroutines: 300
   handle_ddr: true
   ipset: []
-  filtering_enabled: true
-  filters_update_interval: 24
-  parental_enabled: false
-  safesearch: {}
-  safe_fs_patterns: []
-  blocked_response_ttl: 10
-  querylog_enabled: true
-  querylog_file_enabled: true
-  querylog_interval: 2160h
-  querylog_size_memory: 1000
-  anonymize_client_ip_setting: false
-  statistics_enabled: true
-  statistics_interval: 360
+  ipset_file: ""
+  bootstrap_prefer_ipv6: false
+  upstream_timeout: 10s
+  private_networks: []
   use_private_ptr_resolvers: true
   local_ptr_upstreams: []
   use_dns64: false
@@ -76,6 +63,34 @@ dns:
   serve_http3: false
   use_http3_upstreams: false
   serve_plain_dns: true
+  hostsfile_enabled: true
+tls:
+  enabled: false
+  server_name: ""
+  force_https: false
+  port_https: 443
+  port_dns_over_tls: 853
+  port_dns_over_quic: 853
+  port_dnscrypt: 0
+  dnscrypt_config_file: ""
+  allow_unencrypted_doh: false
+  certificate_chain: ""
+  private_key: ""
+  certificate_path: ""
+  private_key_path: ""
+  strict_sni_check: false
+querylog:
+  dir_path: ""
+  ignored: []
+  interval: 2160h
+  size_memory: 1000
+  enabled: true
+  file_enabled: true
+statistics:
+  dir_path: ""
+  ignored: []
+  interval: 24h
+  enabled: true
 filters:
   - enabled: true
     url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
@@ -104,6 +119,38 @@ dhcp:
     lease_duration: 86400
     ra_slaac_only: false
     ra_allow_slaac: false
+filtering:
+  blocking_ipv4: ""
+  blocking_ipv6: ""
+  blocked_services:
+    schedule:
+      time_zone: UTC
+    ids: []
+  protection_disabled_until: null
+  safe_search:
+    enabled: false
+    bing: true
+    duckduckgo: true
+    ecosia: true
+    google: true
+    pixabay: true
+    yandex: true
+    youtube: true
+  blocking_mode: default
+  parental_block_host: family-block.dns.adguard.com
+  safebrowsing_block_host: standard-block.dns.adguard.com
+  rewrites: []
+  safe_fs_patterns: []
+  safebrowsing_cache_size: 1048576
+  safesearch_cache_size: 1048576
+  parental_cache_size: 1048576
+  cache_time: 30
+  filters_update_interval: 24
+  blocked_response_ttl: 10
+  filtering_enabled: true
+  parental_enabled: false
+  safebrowsing_enabled: false
+  protection_enabled: true
 clients:
   runtime_sources:
     whois: true
@@ -113,6 +160,7 @@ clients:
     hosts: true
   persistent: []
 log:
+  enabled: true
   file: /opt/AdGuardHome/AdGuardHome.log
   max_backups: 0
   max_size: 100
