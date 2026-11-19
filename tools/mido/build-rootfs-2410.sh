@@ -109,7 +109,7 @@ mkdir -p "$ROOTFS/etc/rc.d"
 for n in modemmanager udev-alpine dbus uhttpd rpcd network dnsmasq firewall dropbear; do
 	rm -f "$ROOTFS"/etc/rc.d/[SK]??"$n"
 done
-for s in mido-early:10 mido-usb:15 wpad:19 dbus:19 dropbear:19 dnsmasq:19 firewall:19 network:20 udev-alpine:61 modemmanager:91 mido-modem:90 mido-data:92 mido-watchdog:93 mido-wifi:94 mido-debug:95 uhttpd:50 rpcd:12; do
+for s in mido-early:10 mido-usb:15 nft-modules:15 wpad:19 dbus:19 dropbear:19 dnsmasq:19 firewall:19 network:20 udev-alpine:61 modemmanager:91 mido-modem:90 mido-data:92 mido-watchdog:93 mido-wifi:94 mido-debug:95 uhttpd:50 rpcd:12; do
 	n=${s%%:*}; l=${s##*:}
 	[ -f "$ROOTFS/etc/init.d/$n" ] && ln -sf "../init.d/$n" "$ROOTFS/etc/rc.d/S${l}$n"
 done

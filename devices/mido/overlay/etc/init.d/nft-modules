@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+# Modul nftables (ct/reject/fib) tak termuat otomatis di kernel mido -> insmod
+# eksplisit sebelum fw4 (S19). Tanpa ini fw4 gagal render (ENOENT).
+START=15
+
+start() {
+	K=/lib/modules/$(uname -r)/kernel
+	for m in \
+		net/ipv6/ipv6.ko \
+		net/ipv4/netfilter/nf_reject_ipv4.ko \
+		net/ipv6/netfilter/nf_reject_ipv6.ko \
+		net/netfilter/nft_reject.ko \
+		net/netfilter/nft_reject_inet.ko \
+		net/netfilter/nft_ct.ko \
+		net/netfilter/nft_fib.ko \
+		net/netfilter/nft_fib_ipv4.ko \
+		net/ipv6/netfilter/nft_fib_ipv6.ko \
+		net/netfilter/nft_fib_inet.ko; do
+		[ -f "$K/$m" ] || continue
+		insmod "$K/$m" 2>/dev/null
+	done
+}

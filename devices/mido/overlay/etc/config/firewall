@@ -13,3 +13,18 @@ config zone
 	option mtu_fix '1'
 	list network 'usb'
 	list network 'wifi'
+
+# WAN = LTE (qmapmux0.0). input DROP: tak ada layanan yang perlu dijangkau
+# dari internet; LuCI/ttyd/AdGuard cukup dari LAN.
+config zone
+	option name 'wan'
+	option input 'DROP'
+	option output 'ACCEPT'
+	option forward 'DROP'
+	option masq '1'
+	option mtu_fix '1'
+	list device 'qmapmux0.0'
+
+config forwarding
+	option src 'hotspot'
+	option dest 'wan'
