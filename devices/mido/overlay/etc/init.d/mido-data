@@ -48,6 +48,13 @@ mm_restart() {
 }
 
 bring_up() {
+	# MM init butuh net port (qmapmux0.0) sejak awal; ipa2-lite membuatnya
+	# terlambat di boot -> tunggu dulu, kalau tidak MM membuang modem.
+	i=0
+	while [ $i -lt 40 ] && [ ! -e /sys/class/net/qmapmux0.0 ]; do
+		i=$((i+1)); sleep 1
+	done
+	logger -t mido-data "qmapmux0.0 siap setelah ${i}s"
 	wait_modem || logger -t mido-data "QRTR modem tak pernah siap"
 	ok=0
 	for t in 1 2 3 4 5 6; do
