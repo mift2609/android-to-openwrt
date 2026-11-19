@@ -80,3 +80,12 @@ jalankan `resize2fs /dev/mmcblk0p49` supaya sisa partisi terpakai.
    `mido-hotspot`). Sandi root belum diset -> LuCI minta dibuat saat login pertama.
 
 Kernel tidak perlu ditulis ulang selama `uname -r` tetap `6.19.5-postmarketos-qcom-msm8953`.
+
+## Catatan kernel: `ipa2-lite`, bukan `ipa`
+
+Kernel yang **berjalan** di perangkat memakai modul `drivers/net/ipa2-lite/ipa2-lite.ko`
+(driver IPA varian MSM8953), sedangkan build CI dari `msm8953-mainline/linux` tag yang sama
+menghasilkan `drivers/net/ipa/ipa.ko`. Artinya `.config` kernel perangkat **belum** sama dengan
+`devices/mido/kernel.config.fragment` (perlu `CONFIG_IPA2_LITE` + tambalan IPA2). Selama belum
+diperbaiki: **jangan tulis boot.img hasil CI**, dan untuk rootfs pakai `MODSRC=out/mido/modules-live`
+(salinan `/lib/modules` perangkat) supaya modem tetap hidup.
