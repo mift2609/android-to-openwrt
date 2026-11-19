@@ -1,0 +1,120 @@
+---
+proxy-providers:
+  Acc1:
+    type: file
+    path: "./proxy_provider/account-1.yaml"
+    health-check:
+      enable: true
+      url: http://www.gstatic.com/generate_204
+      interval: 30
+  Acc2:
+    type: file
+    path: "./proxy_provider/account-2.yaml"
+    health-check:
+      enable: true
+      url: http://www.gstatic.com/generate_204
+      interval: 30
+proxy-groups:
+- name: Streaming
+  type: select
+  disable-udp: false
+  proxies:
+  - Acc1-LB
+  - Acc2-LB
+  - Auto
+  - DIRECT
+- name: Games
+  type: select
+  disable-udp: false
+  proxies:
+  - Acc1-LB
+  - Acc2-LB
+  - Auto
+  - DIRECT
+- name: Ewallet
+  type: select
+  disable-udp: false
+  proxies:
+  - Acc1-LB
+  - Acc2-LB
+  - Auto
+  - DIRECT
+- name: Sosmed
+  type: select
+  disable-udp: false
+  proxies:
+  - Acc1-LB
+  - Acc2-LB
+  - Auto
+  - DIRECT
+- name: Acc1-LB
+  type: load-balance
+  strategy: round-robin
+  disable-udp: false
+  use:
+  - Acc1
+  url: http://www.gstatic.com/generate_204
+  interval: 30
+- name: Acc2-LB
+  type: load-balance
+  strategy: round-robin
+  disable-udp: false
+  use:
+  - Acc2
+  url: http://www.gstatic.com/generate_204
+  interval: 30
+- name: Auto
+  type: url-test
+  disable-udp: false
+  proxies:
+  - Acc1-LB
+  - Acc2-LB
+  url: http://www.gstatic.com/generate_204
+  interval: 30
+- name: GLOBAL
+  type: select
+  disable-udp: false
+  proxies:
+  - Acc1-LB
+  - Acc2-LB
+  - Auto
+  - DIRECT
+  url: http://www.gstatic.com/generate_204
+  interval: 30
+rule-providers:
+  Direct:
+    type: file
+    behavior: classical
+    path: "./rule_provider/direct.yaml"
+  Reject:
+    type: file
+    behavior: classical
+    path: "./rule_provider/reject.yaml"
+  Streaming:
+    type: file
+    behavior: classical
+    path: "./rule_provider/streaming.yaml"
+  Games:
+    type: file
+    behavior: classical
+    path: "./rule_provider/games.yaml"
+  Sosmed:
+    type: file
+    behavior: classical
+    path: "./rule_provider/sosmed.yaml"
+  Ewallet:
+    type: file
+    behavior: classical
+    path: "./rule_provider/ewallet.yaml"
+experimental:
+  ignore-resolve-fail: true
+rules:
+- RULE-SET,Sosmed,Sosmed
+- RULE-SET,Ewallet,Ewallet
+- RULE-SET,Streaming,Streaming
+- RULE-SET,Games,Games
+- RULE-SET,Direct,DIRECT
+- RULE-SET,Reject,REJECT
+- MATCH,GLOBAL
+keep-alive-interval: 5
+keep-alive-idle: 100
