@@ -115,3 +115,9 @@ ls out/mido/mm-bundle.tgz    # isi: opt/mm + init.d/{udev-alpine,modemmanager}
 ```
 
 Tanpa bundle, skrip build mencetak peringatan; LTE tak akan hidup.
+
+## Firewall (fw4)
+
+NAT/MSS sepenuhnya di fw4: zone `hotspot` (usb+wifi) -> zone `wan` (`list device qmapmux0.0`, input/forward DROP, masq+mtu_fix). Tak ada lagi `table ip mido` dari `mido-data`.
+
+Modul nft (`nft_ct`, `nft_reject_inet`, `nft_fib_inet`) tak termuat otomatis karena `ipv6.ko` adalah modul dan kmodloader tak mengurutkannya. `/etc/init.d/nft-modules` (S15) melakukan insmod eksplisit sebelum fw4 (S19). Tanpa itu fw4 gagal render: `Error: No such file or directory` pada `ct state vmap` / `reject`.
