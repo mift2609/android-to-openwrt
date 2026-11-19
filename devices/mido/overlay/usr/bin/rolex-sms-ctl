@@ -1,0 +1,79 @@
+#!/bin/sh
+# mmcli: pakai bundle /opt/mm bila ada (image mido tak memasang paket modemmanager)
+if [ -x /opt/mm/usr/bin/mmcli ]; then
+	PATH=/opt/mm/usr/bin:$PATH
+	LD_LIBRARY_PATH=/opt/mm/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+	export PATH LD_LIBRARY_PATH
+fi
+
+# SMS rolex lewat QMI (ModemManager) — TANPA AT.
+#
+# Kenapa: channel AT modem (DATA1/DATA4) tidak menjawab "AT" lagi di firmware ini,
+# jadi sms_tool/gcom (berbasis AT) tidak bisa dipakai. ModemManager bicara QMI dan
+# mendukung SMS penuh, jadi SMS ditangani lewat situ.
+#
+# Syarat: modem MM dalam keadaan "enabled" (skrip ini mengaktifkan sendiri bila perlu),
+# dan MM tetap dibiarkan mengelola jaringan (LTE kita tetap lewat qmicli/rolex-lte-run).
+#
+# pakai: rolex-sms-ctl list | read <id> | send <nomor> <teks> | delete <id> | delete-all
+
+mm_aktif() {
+	st=$(timeout 20 mmcli -m any 2>/dev/null | sed -n 's/^.*|[[:space:]]*state:[[:space:]]*\(.*\)$/\1/p' | head -1)
+	if [ "$st" = "disabled" ] || [ -z "$st" ]; then
+		timeout 20 mmcli -m any --enable >/dev/null 2>&1
+		sleep 3
+	fi
+}
+
+case "$1" in
+list)
+	# Hanya pesan yang benar-benar ada (received/sent/stored/sending). Entri "receiving"/"unknown"
+	# adalah slot kosong/draft yang ditahan ModemManager dan tak bisa dibaca/dihapus -> disembunyikan.
+	timeout 20 mmcli -m any --messaging-list-sms 2>/dev/null |
+		sed -n 's|.*/SMS/\([0-9]*\) (\(.*\))|id=\1 state=\2|p' |
+		grep -vE 'state=(receiving|unknown)$'
+	;;
+list-all)
+	timeout 20 mmcli -m any --messaging-list-sms 2>/dev/null |
+		sed -n 's|.*/SMS/\([0-9]*\) (\(.*\))|id=\1 state=\2|p'
+	;;
+read)
+	[ -n "$2" ] || { echo "pakai: read <id>"; exit 1; }
+	timeout 20 mmcli -s "$2" 2>/dev/null | sed -n \
+		-e 's/^.*number:[[:space:]]*\(.*\)$/number=\1/p' \
+		-e 's/^.*text:[[:space:]]*\(.*\)$/text=\1/p' \
+		-e 's/^.*timestamp:[[:space:]]*\(.*\)$/timestamp=\1/p' \
+		-e 's/^.*state:[[:space:]]*\(.*\)$/state=\1/p'
+	;;
+send)
+	num="$2"; shift 2; teks="$*"
+	[ -n "$num" ] && [ -n "$teks" ] || { echo "pakai: send <nomor> <teks>"; exit 1; }
+	mm_aktif
+	path=$(timeout 20 mmcli -m any --messaging-create-sms="number=$num,text=$teks" 2>/dev/null |
+		sed -n 's/.*created sms:[[:space:]]*\(.*\)$/\1/p')
+	[ -n "$path" ] || { echo "error=tidak bisa membuat SMS (teks terlalu panjang / modem sibuk)"; exit 1; }
+	timeout 20 mmcli -m any --messaging-send-sms="$path" 2>&1 | tail -1
+	;;
+delete)
+	[ -n "$2" ] || { echo "pakai: delete <id>"; exit 1; }
+	# mmcli -s <id> --delete tidak jalan di MM 1.22 ("no actions specified"), pakai bentuk ini:
+	timeout 20 mmcli -m any --messaging-delete-sms="/org/freedesktop/ModemManager1/SMS/$2" 2>&1 | tail -1
+	;;
+delete-all)
+	ids=$(timeout 20 mmcli -m any --messaging-list-sms 2>/dev/null | sed -n 's|.*/SMS/\([0-9]*\).*|\1|p')
+	n=0
+	for id in $ids; do
+		timeout 20 mmcli -m any --messaging-delete-sms="/org/freedesktop/ModemManager1/SMS/$id" >/dev/null 2>&1 &&
+			n=$((n + 1))
+	done
+	echo "$n SMS dihapus"
+	;;
+status)
+	mm_aktif
+	timeout 20 mmcli -m any 2>/dev/null | grep -E "state:|power state:|signal quality|packet service state" |
+		sed 's/^[[:space:]]*|*[[:space:]]*//' | tr -d '\r'
+	;;
+*)
+	echo "pakai: $0 list|list-all|read <id>|send <nomor> <teks>|delete <id>|delete-all|status"
+	;;
+esac

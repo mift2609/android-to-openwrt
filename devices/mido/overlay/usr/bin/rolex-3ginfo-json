@@ -1,0 +1,142 @@
+#!/bin/sh
+# mmcli: pakai bundle /opt/mm bila ada (image mido tak memasang paket modemmanager)
+if [ -x /opt/mm/usr/bin/mmcli ]; then
+	PATH=/opt/mm/usr/bin:$PATH
+	LD_LIBRARY_PATH=/opt/mm/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+	export PATH LD_LIBRARY_PATH
+fi
+
+# Sumber data untuk halaman LuCI "4G Connection" (luci-app-3ginfo-lite).
+# Aslinya 3ginfo.sh membaca modem lewat gcom/AT; modem rolex tak punya tty AT
+# (port WWAN char device -> tcsetattr gagal), jadi nilainya diambil dari qmicli (QMI/QRTR).
+# Dipanggil oleh /usr/share/3ginfo-lite/3ginfo.sh (pembungkus, lihat berkas itu).
+# Statistik koneksi (conn_time/rx/tx) dan suhu dihitung sendiri di sini, supaya script ini
+# bisa dipanggil langsung (mis. dari halaman LuCI rolexmodem) tanpa pembungkus 3ginfo.sh.
+
+Q="qmicli -d qrtr://0"
+j() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+num() { printf '%s' "$1" | grep -oE '\-?[0-9]+(\.[0-9]+)?' | head -1; }
+
+sig=$($Q --nas-get-signal-info 2>/dev/null | tr -d "'")
+rssi=$(num "$(echo "$sig" | sed -n 's/.*RSSI:[[:space:]]*\(.*\)/\1/p' | head -1)")
+rsrp=$(num "$(echo "$sig" | sed -n 's/.*RSRP:[[:space:]]*\(.*\)/\1/p' | head -1)")
+rsrq=$(num "$(echo "$sig" | sed -n 's/.*RSRQ:[[:space:]]*\(.*\)/\1/p' | head -1)")
+sinr=$(num "$(echo "$sig" | sed -n 's/.*SNR:[[:space:]]*\(.*\)/\1/p' | head -1)")
+
+serv=$($Q --nas-get-serving-system 2>/dev/null | tr -d "'")
+reg=$(echo "$serv" | sed -n 's/^[[:space:]]*Registration state:[[:space:]]*\(.*\)$/\1/p' | head -1)
+rat=$(echo "$serv" | sed -n 's/^[[:space:]]*\[0\]: \(.*\)$/\1/p' | head -1)
+opname=$(echo "$serv" | sed -n 's/^[[:space:]]*Description: \(.*\)$/\1/p' | head -1)
+mcc=$(echo "$serv" | sed -n 's/^[[:space:]]*MCC: \(.*\)$/\1/p' | head -1)
+mnc=$(echo "$serv" | sed -n 's/^[[:space:]]*MNC: \(.*\)$/\1/p' | head -1)
+cid=$(num "$(echo "$serv" | sed -n 's/^[[:space:]]*3GPP cell ID: \(.*\)$/\1/p' | head -1)")
+tac=$(num "$(echo "$serv" | sed -n 's/^[[:space:]]*LTE tracking area code: \(.*\)$/\1/p' | head -1)")
+lac=$(num "$(echo "$serv" | sed -n 's/^[[:space:]]*3GPP location area code: \(.*\)$/\1/p' | head -1)")
+
+rf=$($Q --nas-get-rf-band-info 2>/dev/null | tr -d "'")
+band=$(echo "$rf" | sed -n 's/^[[:space:]]*Active Band Class:[[:space:]]*\(.*\)$/\1/p' | head -1)
+earfcn=$(num "$(echo "$rf" | sed -n 's/^[[:space:]]*Active Channel:[[:space:]]*\(.*\)$/\1/p' | head -1)")
+# info sel: dipakai untuk PCI sel layan + daftar sel tetangga (PCI & RSRP)
+cli=$($Q --nas-get-cell-location-info 2>/dev/null | tr -d "'")
+pci=$(num "$(printf '%s\n' "$cli" | sed -n 's/^[[:space:]]*Physical Cell ID: \(.*\)$/\1/p' | head -1)")
+neigh=$(printf '%s\n' "$cli" | awk '
+	/Physical Cell ID:/ { p = $NF; next }
+	/RSRP:/ { if (p != "") { printf "%s%s (%s dBm)", (n++ ? ", " : ""), p, $2; p = "" } }')
+
+modem_rev=$($Q --dms-get-revision 2>/dev/null | sed -n "s/.*Revision: '\(.*\)'.*/\1/p" | head -1)
+mm=$(timeout 20 mmcli -m any 2>/dev/null)
+mmi=$(timeout 20 mmcli -i any 2>/dev/null)
+imei=$(printf '%s\n' "$mm" | sed -n 's/.*equipment id:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+imsi=$(printf '%s\n' "$mmi" | sed -n 's/.*imsi:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+iccid=$(printf '%s\n' "$mmi" | sed -n 's/.*iccid:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+[ -n "$imei" ] || imei=$($Q --dms-get-ids 2>/dev/null | sed -n 's/.*IMEI: .\([0-9]*\)..*/\1/p' | head -1)
+
+# eutran-3 -> "B3 (1800 MHz)" supaya halaman menampilkan band yang mudah dibaca
+bandlabel() {
+	n=$(printf '%s' "$1" | sed -n 's/^eutran-\([0-9]*\)$/\1/p')
+	[ -z "$n" ] && { printf '%s' "${1:--}"; return; }
+	f=''
+	case "$n" in
+		1) f='2100 MHz';; 2) f='1900 MHz';; 3) f='1800 MHz';; 4) f='1700 MHz';;
+		5) f='850 MHz';;  7) f='2600 MHz';; 8) f='900 MHz';;  20) f='800 MHz';;
+		28) f='700 MHz';; 38) f='2600 MHz';; 40) f='2300 MHz';; 41) f='2500 MHz';;
+		*) f='' ;;
+	esac
+	[ -n "$f" ] && printf 'B%s (%s)' "$n" "$f" || printf 'B%s' "$n"
+}
+
+# persen sinyal ditaksir dari RSRP (khas 3ginfo: >80 bagus sekali)
+sigpct=$(awk -v r="${rsrp:-0}" 'BEGIN{ p=(r+120)/44*100; if(p<0)p=0; if(p>100)p=100; printf "%d", p }')
+# CSQ ditaksir dari RSSI (CSQ = (RSSI+113)/2, 0..31)
+csq=$(awk -v r="${rssi:-0}" 'BEGIN{ c=(r+113)/2; if(c<0)c=0; if(c>31)c=31; printf "%d", c }')
+hexof() { [ -n "$1" ] && printf "0x%X" "$1" || echo "-"; }
+
+# --- statistik koneksi -------------------------------------------------------
+# rx/tx: kernel tidak mengisi counter wwan0 (driver bam-dmux), jadi pakai counter nft
+# di tabel netdev rolex_stat yang dibuat /etc/init.d/rolex-nat.
+human() {
+	[ -n "$1" ] || { echo "-"; return; }
+	awk -v b="$1" 'BEGIN { if (b >= 1048576) printf "%.1f MiB", b/1048576; else if (b >= 1024) printf "%.1f KiB", b/1024; else printf "%d B", b }'
+}
+# nft mencetak: counter packets N bytes M comment "rx"
+STAT=$(nft list table netdev rolex_stat 2>/dev/null)
+bytes_of() {
+	printf '%s\n' "$STAT" | awk -v c="\"$1\"" '$0 ~ c { for (i=1;i<=NF;i++) if ($i=="bytes") { print $(i+1); exit } }'
+}
+rx=$(human "$(bytes_of rx)")
+tx=$(human "$(bytes_of tx)")
+if ip -4 -o addr show wwan0 >/dev/null 2>&1; then connt=LTE; else connt=-; fi
+if [ -s /tmp/rolex-wwan0-since ]; then
+	conn_time_sec=$(( $(cut -d. -f1 /proc/uptime) - $(cat /tmp/rolex-wwan0-since 2>/dev/null || echo 0) ))
+	if [ "$conn_time_sec" -gt 0 ] 2>/dev/null; then
+		conn_time=$(awk -v t="$conn_time_sec" 'BEGIN { printf "%dd, %02d:%02d:%02d", int(t/86400), int(t/3600)%24, int(t/60)%60, t%60 }')
+	fi
+fi
+# suhu: zona termal terpanas (SOC/modem)
+raw=$(for z in /sys/class/thermal/thermal_zone*/temp; do cat "$z" 2>/dev/null; done | sort -n | tail -1)
+[ -n "$raw" ] && mtemp=$(awk -v t="$raw" 'BEGIN { printf "%.1f", t/1000 }')
+
+echo "{"
+echo "\"error\":\"\","
+echo "\"signal\":\"$sigpct\","
+echo "\"operator_name\":\"$(j "${opname:--}")\","
+echo "\"operator_mcc\":\"${mcc:--}\","
+echo "\"operator_mnc\":\"${mnc:--}\","
+echo "\"registration\":\"$(j "${reg:--}")\","
+echo "\"mode\":\"$(echo "${rat:-lte}" | tr 'a-z' 'A-Z')\","
+echo "\"location\":\"$(j "${opname:--}")\","
+echo "\"connt\":\"$(j "${connt:--}")\","
+echo "\"conn_time\":\"$(j "${conn_time:--}")\","
+echo "\"conn_time_sec\":\"${conn_time_sec:-0}\","
+echo "\"rx\":\"$(j "${rx:--}")\","
+echo "\"tx\":\"$(j "${tx:--}")\","
+echo "\"modem\":\"MSM8917 (rpmsg-wwan / MSS)\","
+echo "\"firmware\":\"$(j "${modem_rev:--}")\","
+echo "\"mtemp\":\"${mtemp:--}\","
+echo "\"cport\":\"qrtr://0\","
+echo "\"protocol\":\"QMI (libqmi)\","
+echo "\"imei\":\"$(j "${imei:--}")\","
+echo "\"imsi\":\"$(j "${imsi:--}")\","
+echo "\"iccid\":\"$(j "${iccid:--}")\","
+echo "\"csq\":\"$csq\","
+echo "\"rssi\":\"${rssi:--}\","
+echo "\"rsrp\":\"${rsrp:--}\","
+echo "\"rsrq\":\"${rsrq:--}\","
+echo "\"sinr\":\"${sinr:--}\","
+echo "\"pband\":\"$(bandlabel "$band")\","
+echo "\"earfcn\":\"${earfcn:--}\","
+echo "\"pci\":\"${pci:--}\","
+echo "\"neighbors\":\"$(j "${neigh:--}")\","
+echo "\"cid_dec\":\"${cid:--}\","
+echo "\"cid_hex\":\"$(hexof "$cid")\","
+echo "\"tac_d\":\"${tac:--}\","
+echo "\"tac_dec\":\"${tac:--}\","
+echo "\"tac_h\":\"$(hexof "$tac")\","
+echo "\"tac_hex\":\"$(hexof "$tac")\","
+echo "\"lac_dec\":\"${lac:--}\","
+echo "\"lac_hex\":\"$(hexof "$lac")\","
+echo "\"s1band\":\"-\",\"s1earfcn\":\"-\",\"s1pci\":\"-\","
+echo "\"s2band\":\"-\",\"s2earfcn\":\"-\",\"s2pci\":\"-\","
+echo "\"s3band\":\"-\",\"s3earfcn\":\"-\",\"s3pci\":\"-\","
+echo "\"s4band\":\"-\",\"s4earfcn\":\"-\",\"s4pci\":\"-\""
+echo "}"

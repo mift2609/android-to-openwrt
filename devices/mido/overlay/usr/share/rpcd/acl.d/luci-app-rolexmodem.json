@@ -1,0 +1,20 @@
+{
+	"luci-app-rolexmodem": {
+		"description": "Modem LTE (sinyal, band, APN, SMS, restart)",
+		"read": {
+			"file": {
+				"/usr/bin/rolex-modem-ctl": [ "exec" ],
+				"/usr/bin/rolex-3ginfo-json": [ "exec" ],
+				"/usr/bin/rolex-sms-ctl": [ "exec" ]
+			},
+			"ubus": { "uci": [ "get" ] }
+		},
+		"write": {
+			"file": {
+				"/usr/bin/rolex-modem-ctl": [ "exec" ],
+				"/usr/bin/rolex-sms-ctl": [ "exec" ]
+			},
+			"ubus": { "uci": [ "set", "commit" ] }
+		}
+	}
+}

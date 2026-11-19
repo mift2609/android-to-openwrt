@@ -1,0 +1,178 @@
+#!/bin/sh
+# mmcli: pakai bundle /opt/mm bila ada (image mido tak memasang paket modemmanager)
+if [ -x /opt/mm/usr/bin/mmcli ]; then
+	PATH=/opt/mm/usr/bin:$PATH
+	LD_LIBRARY_PATH=/opt/mm/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+	export PATH LD_LIBRARY_PATH
+fi
+
+# rolex-modem-ctl — kontrol modem LTE rolex dari LuCI (dan CLI).
+#
+#   status                 cetak info sinyal/band/registrasi/APN/IP (key=value)
+#   signal                 hanya sinyal (ringkas)
+#   apn <apn>              set APN (uci modem.settings.apn) lalu restart layanan LTE
+#   apn-user <user>        set username APN (disimpan; dipakai bila binary mendukung)
+#   apn-pass <pass>        set password APN
+#   ipfam <ipv4|ipv6|ipv4v6>
+#   profile <nama-kosong>  PROFILE QMI (opsional, biarkan kosong = default)
+#   band <daftar|auto>     lock band via ModemManager, mis:
+#                          band "eutran-3,eutran-5" | band auto
+#   bands                  daftar band didukung + yang aktif sekarang
+#   reboot                 restart modem (MSS) + layanan LTE  [± 60-90 s]
+#   luci-path              cetak lokasi halaman LuCI
+#
+# Semua aksi sengaja lewat SATU binary ini supaya ACL LuCI cukup satu entri.
+LOG=/var/log/rolex-modem-ctl.log
+QW="qmicli -d qrtr://0"
+# port AT: kernel baru = tty /dev/ttyRPMSG*; kernel lama = /dev/wwan0at0.
+# Jangan dipatok — pakai deteksi (lihat /usr/bin/rolex-at-port).
+at_port() { /usr/bin/rolex-at-port 2>/dev/null || echo /dev/wwan0at0; }
+say() { echo "$*"; echo "$(date '+%F %T') $*" >> $LOG; }
+
+qmi() { $QW "$@" 2>&1; }
+
+# qmicli bisa gagal sesaat (QRTR sibuk / modem baru bangun) -> coba ulang.
+qmi_retry() {
+	i=0
+	while [ $i -lt 3 ]; do
+		out=$($QW "$@" 2>&1)
+		case "$out" in
+			*"node with id 0 not found"*|*"Invalid argument"*|"") i=$((i+1)); sleep 1;;
+			*) echo "$out"; return 0;;
+		esac
+	done
+	echo "$out"
+	return 1
+}
+
+cmd_status() {
+	sig=$(qmi_retry --nas-get-signal-info | tr -d "'" | sed -n 's/^[[:space:]]*\(RSSI\|RSRP\|RSRQ\|SNR\):[[:space:]]*\(.*\)$/\1=\2/p')
+	serv=$(qmi_retry --nas-get-serving-system | tr -d "'")
+	rf=$(qmi_retry --nas-get-rf-band-info | tr -d "'" | sed -n 's/^[[:space:]]*Active Band Class:[[:space:]]*\(.*\)$/\1/p' | head -1)
+	ch=$(qmi_retry --nas-get-rf-band-info | tr -d "'" | sed -n 's/^[[:space:]]*Active Channel:[[:space:]]*\(.*\)$/\1/p' | head -1)
+	reg=$(echo "$serv" | sed -n 's/^[[:space:]]*Registration state:[[:space:]]*\(.*\)$/\1/p' | head -1)
+	# catatan: $serv sudah lewat `tr -d "'"`, jadi polanya tanpa tanda kutip
+	rat=$(echo "$serv" | sed -n 's/^[[:space:]]*\[0\]: \(.*\)$/\1/p' | head -1)
+	net=$(echo "$serv" | sed -n 's/^[[:space:]]*Selected network:[[:space:]]*\(.*\)$/\1/p' | head -1)
+	[ -n "$rat" ] && net=$rat
+	op=$(echo "$serv" | sed -n 's/^[[:space:]]*Description: \(.*\)$/\1/p' | head -1)
+	mcc=$(echo "$serv" | sed -n 's/^[[:space:]]*MCC: \(.*\)$/\1/p' | head -1)
+	mnc=$(echo "$serv" | sed -n 's/^[[:space:]]*MNC: \(.*\)$/\1/p' | head -1)
+	cell=$(echo "$serv" | sed -n 's/^[[:space:]]*3GPP cell ID: \(.*\)$/\1/p' | head -1)
+	tac=$(echo "$serv" | sed -n 's/^[[:space:]]*LTE tracking area code: \(.*\)$/\1/p' | head -1)
+	ps=$(echo "$serv" | sed -n 's/^[[:space:]]*PS:[[:space:]]*\(.*\)$/\1/p' | head -1)
+	echo "apn=$(uci -q get modem.settings.apn)"
+	echo "ipfam=$(uci -q get modem.settings.ipfam)"
+	echo "refresh=$(uci -q get modem.settings.refresh)"
+	echo "check_secs=$(uci -q get modem.settings.check_secs)"
+	echo "check_fails=$(uci -q get modem.settings.check_fails)"
+	echo "rotate_mins=$(uci -q get modem.settings.rotate_mins)"
+	echo "restart_after=$(uci -q get modem.settings.restart_after)"
+	echo "ping_target=$(uci -q get modem.settings.ping_target)"
+	echo "reboot_after_mss=$(uci -q get modem.settings.reboot_after_mss)"
+	echo "profile=$(uci -q get modem.settings.profile)"
+	echo "$sig"
+	echo "network=$net"
+	echo "operator=${op:-}"
+	echo "plmn=${mcc:-}${mnc:-}"
+	echo "cell_id=${cell:-}"
+	echo "tac=${tac:-}"
+	echo "ps=${ps:-}"
+	echo "band=$rf"
+	echo "channel=$ch"
+	echo "registration=$reg"
+	echo "ip=$(ip -4 -o addr show wwan0 2>/dev/null | awk '{print $4}' | head -1)"
+	echo "gateway=$(ip route 2>/dev/null | awk '/^default .* wwan0/{print $3}' | head -1)"
+	# `io` = bisa lewat internet atau tidak. Ping sekali bisa meleset (ICMP pertama sering hilang
+	# setelah sesi baru), jadi coba dua kali sebelum menyatakan gagal. Catatan: gateway operator
+	# (mis. 10.2.52.165) TIDAK menjawab ICMP, jadi jangan dipakai sebagai penanda.
+	echo "io=$(if ip -4 -o addr show wwan0 >/dev/null 2>&1; then
+		ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 || ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 && echo ok || echo gagal
+	else echo tidak-ada; fi)"
+	echo "lte_service=$(pidof mido-data >/dev/null 2>&1 && echo jalan || echo mati)"
+	echo "mm_state=$(timeout 20 mmcli -m any 2>/dev/null | sed -n 's/^[[:space:]]*|[[:space:]]*state:[[:space:]]*\(.*\)$/\1/p' | head -1)"
+}
+
+cmd_bands() {
+	# blok mentah dari ModemManager (band list panjang & terlipat beberapa baris);
+	# parsing final dilakukan di halaman LuCI.
+	echo "bands_block<<EOF"
+	timeout 20 mmcli -m any 2>/dev/null | sed -n '/Bands/,/^[[:space:]]*---/p' | sed 's/|//g' | tr -s ' '
+	echo "EOF"
+}
+
+cmd_signal() {
+	qmi --nas-get-signal-info | tr -d "'" | sed -n 's/^[[:space:]]*\(RSSI\|RSRP\|RSRQ\|SNR\):[[:space:]]*\(.*\)$/\1=\2/p'
+}
+
+case "$1" in
+status)  cmd_status; cmd_bands ;;
+signal)  cmd_signal ;;
+bands)   cmd_bands ;;
+apn)
+	[ -n "$2" ] || { say "pakai: apn <nama-apn>"; exit 1; }
+	uci set modem.settings.apn="$2" && uci commit modem
+	say "APN diset: $2 — restart layanan LTE"
+	/etc/init.d/mido-data restart >/dev/null 2>&1
+	;;
+apn-user) uci set modem.settings.username="$2"; uci commit modem; say "username APN: $2" ;;
+apn-pass) uci set modem.settings.password="$2"; uci commit modem; say "password APN diset" ;;
+rebootpolicy)
+	case "$2" in ''|*[!0-9]*) say "pakai: rebootpolicy <jumlah|0>"; exit 1 ;; esac
+	uci set modem.settings.reboot_after_mss="$2"; uci commit modem
+	say "reboot perangkat setelah $2 kali restart modem (0 = jangan pernah)"
+	;;
+lte-restart)
+	/etc/init.d/mido-data restart >/dev/null 2>&1
+	say "sesi LTE diulang — IP baru muncul 30-90 detik lagi"
+	;;
+netguard)
+	# netguard <cek-detik> <gagal-berturut> <rotasi-menit> [restart-setelah] [target-ping]
+	[ -n "$2" ] && [ -n "$3" ] || { say "pakai: netguard <cek-detik> <gagal> <rotasi-menit> [restart-setelah] [target-ping]"; exit 1; }
+	for v in "$2" "$3" "$4" "${5:-3}"; do
+		case "$v" in ''|*[!0-9]*) say "nilai harus angka"; exit 1 ;; esac
+	done
+	uci set modem.settings.check_secs="$2"
+	uci set modem.settings.check_fails="$3"
+	uci set modem.settings.rotate_mins="$4"
+	uci set modem.settings.restart_after="${5:-3}"
+	if [ -n "$6" ]; then uci set modem.settings.ping_target="$6"; else uci delete modem.settings.ping_target 2>/dev/null; fi
+	uci commit modem
+	say "penjaga internet: cek ${2}s, gagal ${3}x, rotasi ${4} menit, restart modem setelah ${5:-3}x, target ${6:-8.8.8.8}"
+	/etc/init.d/mido-data restart >/dev/null 2>&1
+	;;
+refresh)
+	case "$2" in
+		''|*[!0-9]*) say "nilai harus angka detik (0 = mati)"; exit 1 ;;
+		*) uci set modem.settings.refresh="$2"; uci commit modem; say "auto refresh: ${2} detik" ;;
+	esac ;;
+ipfam)
+	case "$2" in ipv4|ipv6|ipv4v6) uci set modem.settings.ipfam="$2"; uci commit modem; say "ipfam: $2"; /etc/init.d/mido-data restart >/dev/null 2>&1;; *) say "nilai ipfam harus ipv4|ipv6|ipv4v6"; exit 1;; esac ;;
+profile) uci set modem.settings.profile="$2"; uci commit modem; say "profile: $2" ;;
+band)
+	[ -n "$2" ] || { say "pakai: band \"eutran-3,eutran-5\" | band auto"; exit 1; }
+	# modemmanager 1.22 (OpenWrt) hanya mau pemisah "|" — koma ditolak
+	case "$2" in auto|any) B=any ;; *) B=$(printf '%s' "$2" | tr ',' '|') ;; esac
+	out=$(timeout 20 mmcli -m any --set-current-bands="$B" 2>&1)
+	say "band ($B): $out"
+	# pindah band memutus sesi data lama -> bangun ulang (jalan di latar belakang
+	# supaya halaman LuCI tak menunggu 60-90 s)
+	/etc/init.d/mido-data restart >/dev/null 2>&1 &
+	say "layanan LTE dimulai ulang; IP kembali ~60-90 s"
+	cmd_bands
+	;;
+reboot|modem-reboot)
+	say "restart modem: layanan LTE berhenti dulu"
+	/etc/init.d/mido-data stop >/dev/null 2>&1
+	sleep 2
+	/etc/init.d/mido-modem restart >/dev/null 2>&1
+	sleep 8
+	/etc/init.d/mido-data start >/dev/null 2>&1
+	say "restart modem selesai (tunggu ~60-90 s sampai IP muncul)"
+	;;
+luci-path) say "LuCI: Modem -> Modem LTE (/cgi-bin/luci/admin/modem/lte)" ;;
+*) cat <<EOF
+pakai: $0 status|signal|bands|netguard <cek> <gagal> <rotasi>|apn <apn>|apn-user <u>|apn-pass <p>|ipfam <v>|refresh <detik>|profile <p>|band <daftar|auto>|reboot
+EOF
+	exit 1 ;;
+esac
