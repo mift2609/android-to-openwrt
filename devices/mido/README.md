@@ -122,10 +122,14 @@ NAT/MSS sepenuhnya di fw4: zone `hotspot` (usb+wifi) -> zone `wan` (`list device
 
 Modul nft (`nft_ct`, `nft_reject_inet`, `nft_fib_inet`) tak termuat otomatis karena `ipv6.ko` adalah modul dan kmodloader tak mengurutkannya. `/etc/init.d/nft-modules` (S15) melakukan insmod eksplisit sebelum fw4 (S19). Tanpa itu fw4 gagal render: `Error: No such file or directory` pada `ct state vmap` / `reject`.
 
-## OpenClash (TUN)
+## OpenClash (semua mode)
 
 - Paket `luci-app-openclash_0.48.002_all.ipk` (dari GitHub, `Depends` dibuang `kmod-tun`) + core `clash_meta` aarch64 dari DE6 (`alpha-gbeb1f27`) disimpan di `out/mido/ipk/`.
-- Kernel mido tak punya `nft_tproxy`, jadi mode redir/tproxy tak bisa. Dipakai `en_mode='fake-ip-tun'`, `stack_type='system'`; TUN (`/dev/net/tun`) built-in.
+- Kernel wajib punya `NFT_TPROXY`, `NFT_SOCKET`, `NFT_REDIR`, `NETFILTER_XT_TARGET_TPROXY`, `NETFILTER_XT_MATCH_SOCKET` (workflow `mift2609/mido-openwrt-kernel`, tag `v6.19.5-r0`). Tanpa `NFT_REDIR`, mode redir-host gagal (`nft ... redirect`: `No such file or directory`).
+- Modul tproxy/socket (`nf_tproxy_ipv4/6`, `nf_socket_ipv4/6`, `nft_tproxy`, `nft_socket`, `xt_TPROXY`) dimuat `/etc/init.d/nft-modules` (S15); `ipv6.ko` harus lebih dulu.
+- Default `en_mode='fake-ip-tun'`, `stack_type='system'` (TUN, `/dev/net/tun` built-in). Mode `redir-host` (tproxy TCP+UDP) juga terbukti jalan.
+- Bug 0.48: chain `openclash`/`openclash_mangle` merujuk set ACL tanpa syarat, jadi set harus ada. Dipakai `lan_ac_mode='1'` + `lan_ac_white_ips` = subnet LAN (26/27) + satu MAC dummy di `lan_ac_white_macs`, dan `common_ports='1'`; tanpa itu rantai berhenti sebelum `redirect`/`tproxy` dan klien tidak diproksi.
+- `boot.img` di `out/mido/` = kernel CI (Oct-30 build tidak punya redir) + initramfs p21 yang terbukti boot; `out/mido/modules-live/` harus dari artefak CI yang sama.
 - DNS: klien -> dnsmasq `:53` -> AdGuard Home `:5353` (filter) -> clash `127.0.0.1:7874` (fake-ip). `enable_redirect_dns='2'` (firewall redirect) supaya DNS liar dari klien tetap dibajak.
 - Config contoh tanpa node: `/etc/openclash/config/test.yaml` (`MATCH,DIRECT`). Ganti lewat LuCI (Config File / Subscription) untuk proxy sungguhan.
 - Start: `/etc/init.d/openclash start` (S99). Butuh `luci-compat`, `ruby`, `ruby-yaml`, `dnsmasq-full`, `ip-full`, `bash`, `ca-bundle`, `unzip`.
