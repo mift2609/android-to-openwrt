@@ -41,3 +41,42 @@ lk2nd, dan strukturnya sama; yang berbeda hanya **DTB**, **argumen mkbootimg**, 
 ./scripts/devices/new-device.sh --name santoni --soc msm8953 --codename santoni
 ./scripts/devices/probe-device.sh --device santoni --boot-img boot-stok-santoni.img --update-profile
 ```
+
+## Rakit rootfs sendiri (`tools/mido/build-rootfs-2410.sh`)
+
+Base = **ImageBuilder** 24.10.5 (armsr/armv8) dengan paket dasar LuCI + ModemManager feed
++ `qmi-utils` + samba/avahi; lalu overlay `devices/mido/overlay`, firmware dari perangkat,
+`rmtfs` statik (`out/mido/bin/rmtfs`), modul kernel, dan ipk sendiri.
+
+```sh
+cd ~/repos/android-to-openwrt
+# 1. base + paket (sekali; hasil: out/mido/owrt-24.10.5-armsr-armv8-rootfs.tar.gz)
+./tools/mido/build-rootfs-2410.sh            # TAR belum ada -> ImageBuilder otomatis
+# 2. image lengkap
+MODSRC=$PWD/out/mido/modules-live \
+FIRMWARE=$PWD/out/mido/firmware \
+IPK=$PWD/out/mido/ipk SIZE=640M ./tools/mido/build-rootfs-2410.sh
+```
+
+**Modul kernel WAJIB cocok `uname -r`.** Perangkat ini berjalan
+`6.19.5-postmarketos-qcom-msm8953`, jadi `devices/mido/device.conf` menyetel
+`KERNEL_LOCALVERSION="-postmarketos-qcom-msm8953"`. Tanpa itu modul CI bernama `6.19.5`
+dan menolak dimuat (`version magic ... should be ...`) -> WiFi/LTE mati.
+`out/mido/modules-live` = salinan `/lib/modules` dari perangkat (pasti cocok).
+
+## Menulis image ke perangkat
+
+Partisi rootfs = `userdata` (`/dev/mmcblk0p49`, 1.4 GB). Image 640 MB; setelah boot pertama
+jalankan `resize2fs /dev/mmcblk0p49` supaya sisa partisi terpakai.
+
+1. Reboot ke lk2nd (fastboot): `reboot` lalu pilih *fastboot* di menu lk2nd (atau `adb reboot bootloader`).
+2. Dari laptop:
+   ```sh
+   gunzip -c rootfs-mido-2410.ext4.gz > rootfs-mido-2410.ext4
+   fastboot flash userdata rootfs-mido-2410.ext4
+   fastboot reboot
+   ```
+3. Setelah hidup: LuCI `http://192.168.26.1/` (USB) atau `http://192.168.27.1/` (WiFi
+   `mido-hotspot`). Sandi root belum diset -> LuCI minta dibuat saat login pertama.
+
+Kernel tidak perlu ditulis ulang selama `uname -r` tetap `6.19.5-postmarketos-qcom-msm8953`.
