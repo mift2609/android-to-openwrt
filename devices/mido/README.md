@@ -89,3 +89,29 @@ menghasilkan `drivers/net/ipa/ipa.ko`. Artinya `.config` kernel perangkat **belu
 `devices/mido/kernel.config.fragment` (perlu `CONFIG_IPA2_LITE` + tambalan IPA2). Selama belum
 diperbaiki: **jangan tulis boot.img hasil CI**, dan untuk rootfs pakai `MODSRC=out/mido/modules-live`
 (salinan `/lib/modules` perangkat) supaya modem tetap hidup.
+
+## LTE: ModemManager 1.24 bundle `/opt/mm` (bukan MM feed)
+
+MM feed 24.10 (1.22) di image ini **gagal**: `couldn't create modem for device
+'qcom-soc': Failed to find a net port in the QMI modem` -> modem dibuang, LTE mati.
+Diperbaiki dengan bundle Alpine yang sama seperti rootfs lama:
+
+- `/opt/mm` (MM 1.24.2 + eudev + polkitd + libs), diambil dari zip backup
+  `mido-openwrt-6.19.5.zip` -> `rootfs.tar.gz` (`./opt/mm`).
+- eudev (`/opt/mm/sbin/udevd`, S61) mengisi `/run/udev/data`; tanpa DB udev MM tak
+  melihat net port. Rules `etc/udev/rules.d/99-mido-netport.rules` menandai
+  `rmnet_ipa0`/`qmapmux*` sebagai `ID_MM_QCOM_SOC` + `ID_MM_PORT_TYPE_NET`.
+- polkitd dibutuhkan MM 1.24 untuk `--enable`/connect; rule `00-allow-all.rules`
+  memberi YES. Symlink `/usr/share/polkit-1` + `/usr/lib/polkit-1` -> `/opt/mm/...`.
+- User `polkitd` (uid 999) ditambahkan ke `/etc/passwd` dan `/etc/group`.
+- Plugin dibaca dari `/usr/lib/ModemManager` -> symlink ke `/opt/mm/usr/lib/ModemManager`.
+- rc.d: `S61udev-alpine` lalu `S91modemmanager` (dbus S19).
+
+Bundle tidak di-commit (9,5 MB biner). Rakit ulang butuh:
+
+```sh
+# dari zip backup: unzip -> tar xzf rootfs.tar.gz ./opt/mm ... (lihat tools/mido)
+ls out/mido/mm-bundle.tgz    # isi: opt/mm + init.d/{udev-alpine,modemmanager}
+```
+
+Tanpa bundle, skrip build mencetak peringatan; LTE tak akan hidup.

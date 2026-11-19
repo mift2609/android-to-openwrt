@@ -24,7 +24,7 @@ ROOTFS=$OUT/rootfs
 INST=$REPO/scripts/tools/install-ipk-into-rootfs.py
 IB=$OUT/openwrt-imagebuilder-24.10.5-armsr-armv8.Linux-x86_64
 # Paket dasar: LuCI + ModemManager (pengganti /opt/mm) + samba/avahi (samba-share)
-PKGS=${PKGS:-"luci luci-ssl uhttpd rpcd rpcd-mod-luci modemmanager qmi-utils libqmi libmbim libqrtr-glib usbutils block-mount samba4-server avahi-dbus-daemon hostapd iw"}
+PKGS=${PKGS:-"luci luci-ssl uhttpd rpcd rpcd-mod-luci qmi-utils libqmi libmbim libqrtr-glib usbutils block-mount samba4-server avahi-dbus-daemon hostapd iw ttyd"}
 
 # TAR = tar rootfs HASIL ImageBuilder (bukan tar polos: tar polos tak punya LuCI/uhttpd/rpcd).
 # Dibuat sekali di sini supaya dependensi kmod/lib diurus ImageBuilder, bukan tangan.
@@ -44,17 +44,41 @@ rm -rf "$ROOTFS"; mkdir -p "$ROOTFS"
 tar xzf "$TAR" -C "$ROOTFS"
 [ -x "$ROOTFS/sbin/init" ] || { echo "[x] sbin/init tidak ada"; exit 1; }
 
-echo "[*] overlay perangkat devices/mido/overlay"
-cp -a "$REPO/devices/mido/overlay/." "$ROOTFS/"
-
-# /init (pivot lama) tak dipakai jalur mainline -> simpan sebagai bukti
-mv -f "$ROOTFS/init" "$ROOTFS/root/init.pivot-lama" 2>/dev/null || true
-
 if [ -n "$IPK" ] && ls "$IPK"/*.ipk >/dev/null 2>&1; then
 	echo "[*] pasang paket dari $IPK"
 	# buang ppp_ (bentrok dengan modul kernel mido)
 	python3 "$INST" "$ROOTFS" $(ls "$IPK"/*.ipk | grep -v 'ppp_') | tail -3
 fi
+
+# overlay DIPASANG SETELAH ipk: kalau sebuah paket membawa berkas yang sama
+# (mis. modem-lte-mido membawa etc/init.d/mido-data), versi overlay yang dipakai.
+echo "[*] overlay perangkat devices/mido/overlay"
+cp -a "$REPO/devices/mido/overlay/." "$ROOTFS/"
+
+# --- ModemManager 1.24 + eudev + polkit (bundle /opt/mm) -------------------
+# MM feed 24.10 (1.22) tak menemukan net port qcom-soc tanpa DB udev -> modem
+# dibuang ("Failed to find a net port"). Bundle Alpine ini yang terbukti hidup.
+MMB=${MM_BUNDLE:-$OUT/mm-bundle.tgz}
+if [ -f "$MMB" ]; then
+	echo "[*] bundle MM 1.24 + eudev + polkit: $MMB"
+	tar xzf "$MMB" -C "$ROOTFS"
+	rm -rf "$ROOTFS/usr/lib/ModemManager" "$ROOTFS/usr/share/polkit-1" "$ROOTFS/usr/lib/polkit-1"
+	mkdir -p "$ROOTFS/usr/share" "$ROOTFS/usr/lib"
+	ln -s /opt/mm/usr/lib/ModemManager   "$ROOTFS/usr/lib/ModemManager"
+	ln -s /opt/mm/usr/share/polkit-1     "$ROOTFS/usr/share/polkit-1"
+	ln -s /opt/mm/usr/lib/polkit-1       "$ROOTFS/usr/lib/polkit-1"
+	grep -q '^polkitd:' "$ROOTFS/etc/passwd" || echo "polkitd:x:999:999:polkitd:/var/lib/polkit-1:/bin/false" >> "$ROOTFS/etc/passwd"
+	grep -q '^polkitd:' "$ROOTFS/etc/group"  || echo "polkitd:x:999:" >> "$ROOTFS/etc/group"
+	mkdir -p "$ROOTFS/var/lib/polkit-1"
+	rm -f "$ROOTFS"/etc/rc.d/*modemmanager
+	ln -sfn ../init.d/udev-alpine  "$ROOTFS/etc/rc.d/S61udev-alpine"
+	ln -sfn ../init.d/modemmanager "$ROOTFS/etc/rc.d/S91modemmanager"
+else
+	echo "[!] $MMB tidak ada -> modem LTE tak akan hidup (MM feed 1.22 tanpa udev)"
+fi
+
+# /init (pivot lama) tak dipakai jalur mainline -> simpan sebagai bukti
+mv -f "$ROOTFS/init" "$ROOTFS/root/init.pivot-lama" 2>/dev/null || true
 
 if [ -n "$FIRMWARE" ] && [ -d "$FIRMWARE" ]; then
 	echo "[*] firmware WCNSS: $FIRMWARE"
@@ -82,10 +106,10 @@ fi
 echo "[*] rc.d (enable init mido)"
 mkdir -p "$ROOTFS/etc/rc.d"
 # paket bisa sudah memasang symlink sendiri (modemmanager: S70) -> buang dulu, hindari start dobel
-for n in modemmanager dbus uhttpd rpcd network dnsmasq firewall dropbear; do
+for n in modemmanager udev-alpine dbus uhttpd rpcd network dnsmasq firewall dropbear; do
 	rm -f "$ROOTFS"/etc/rc.d/[SK]??"$n"
 done
-for s in mido-early:10 mido-usb:15 wpad:19 dbus:19 dropbear:19 dnsmasq:19 firewall:19 network:20 modemmanager:61 mido-modem:90 mido-data:92 mido-watchdog:93 mido-wifi:94 mido-debug:95 uhttpd:50 rpcd:12; do
+for s in mido-early:10 mido-usb:15 wpad:19 dbus:19 dropbear:19 dnsmasq:19 firewall:19 network:20 udev-alpine:61 modemmanager:91 mido-modem:90 mido-data:92 mido-watchdog:93 mido-wifi:94 mido-debug:95 uhttpd:50 rpcd:12; do
 	n=${s%%:*}; l=${s##*:}
 	[ -f "$ROOTFS/etc/init.d/$n" ] && ln -sf "../init.d/$n" "$ROOTFS/etc/rc.d/S${l}$n"
 done
